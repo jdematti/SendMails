@@ -1,0 +1,12 @@
+/vendor/
+/.codex/
+/.agents/
+
+# Configuracion, claves, archivos temporales y logs locales.
+/storage/*
+!/storage/.htaccess
+!/storage/default_template.html
+.env
+.env.*
+!.env.example
+*.log
