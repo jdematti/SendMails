@@ -160,6 +160,8 @@ La plantilla de facturas se edita desde el boton `Plantilla` del modulo Facturas
 
 La plantilla de facturas y el SMTP usado son los de la sucursal activa. El remitente, reply-to, BCC, dominio web, prefijo de localidad y modo test se configuran en la plantilla de facturas. Cuando un envio finaliza correctamente se actualiza `FacturasTel.mail_enviado` y `FacturasTel.fecha_mail_enviado` en la base operativa de esa sucursal.
 
+La clave compatible con el sistema externo de facturas se configura mediante la variable de entorno `INVOICE_CRYPTO_KEY` o el archivo local `storage/invoice_crypto.key`. Debe ser la misma clave que utiliza el sistema que abre los enlaces; no generar una nueva al instalar. Este archivo, `storage/db_config.json` y `storage/branch_secret.key` quedan excluidos de Git y deben conservarse en el respaldo privado de la instalacion. En una instalacion nueva, ejecutar `composer install` para obtener las dependencias de `composer.lock`.
+
 ## WhatsApp Business Platform
 
 La integracion utiliza la Cloud API oficial de Meta y una configuracion independiente por sucursal. No registra ni migra el numero existente: el alta o coexistencia del numero que ya funciona con WhatsApp Business se completa primero en Meta Business.
