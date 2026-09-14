@@ -176,6 +176,7 @@ final class InvoiceMailerService
             $toEmail = (string) $item['email_to'];
             $toName = (string) $item['client_name'];
 
+            $delivered = false;
             try {
                 if (trim((string) ($smtp['host'] ?? '')) === '' || trim((string) ($smtp['from_email'] ?? '')) === '') {
                     throw new RuntimeException('La configuracion SMTP de la sucursal esta incompleta.');
@@ -197,7 +198,8 @@ final class InvoiceMailerService
                     'bcc' => trim((string) ($item['bcc'] ?? '')),
                 ]);
 
-                InvoiceRepository::markSent((int) $item['id'], (string) $item['invoice_id'], (int) ($item['branch_id'] ?? 0));
+                $delivered = true;
+                InvoiceRepository::markSent((int) $item['id'], (string) $item['invoice_id'], (int) ($item['branch_id'] ?? 0), (bool) $item['test_mode']);
                 InvoiceRepository::insertLog([
                     'branch_id' => $item['branch_id'] ?? null,
                     'queue_id' => (int) $item['id'],
@@ -216,6 +218,14 @@ final class InvoiceMailerService
                 ]);
                 $result['sent']++;
             } catch (Throwable $e) {
+                if ($delivered) {
+                    // Keep sent/sending for review: a retry could duplicate the actual email.
+                    InvoiceRepository::markNeedsReview((int) $item['id'], $e->getMessage());
+                    $result['errors'][] = 'Envio realizado; revisar su registro: ' . $e->getMessage();
+                    InvoiceRepository::updateInvoiceBatchTotals((int) ($item['batch_id'] ?? 0));
+                    continue;
+                }
+
                 $message = $e->getMessage();
                 InvoiceRepository::markFailed((int) $item['id'], $message);
                 InvoiceRepository::insertLog([

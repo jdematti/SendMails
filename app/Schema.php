@@ -4,7 +4,56 @@ declare(strict_types=1);
 
 final class Schema
 {
+    public const VERSION = '20260914-1';
+    private static bool $checked = false;
+    private static bool $migrating = false;
+
     public static function ensure(): void
+    {
+        if (self::$checked || self::$migrating) return;
+        try {
+            $version = Database::pdo()->query("SELECT setting_value FROM dbo.SendMail_Settings WHERE setting_key = 'schema_version'")->fetchColumn();
+        } catch (Throwable $e) {
+            throw new SchemaNotReady('La base necesita inicializacion. Ejecuta php migrate.php desde la carpeta del sistema.', 0, $e);
+        }
+        if ($version !== self::VERSION) {
+            throw new SchemaNotReady('Hay una actualizacion de base pendiente. Ejecuta actualizar_produccion.cmd o php migrate.php.');
+        }
+        self::$checked = true;
+    }
+
+    public static function migrate(): void
+    {
+        if (PHP_SAPI !== 'cli') throw new RuntimeException('Las migraciones se ejecutan por consola.');
+        $pdo = Database::pdo();
+        $pdo->beginTransaction();
+        self::$migrating = true;
+        try {
+            $lock = $pdo->query("DECLARE @r int; EXEC @r = sp_getapplock @Resource='SendMails:migration', @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=0; SELECT @r")->fetchColumn();
+            if ((int) $lock < 0) throw new RuntimeException('Otra migracion esta en curso.');
+            $version = null;
+            if ($pdo->query("SELECT OBJECT_ID('dbo.SendMail_Settings', 'U')")->fetchColumn()) {
+                $version = $pdo->query("SELECT setting_value FROM dbo.SendMail_Settings WHERE setting_key = 'schema_version'")->fetchColumn();
+            }
+            if ($version !== self::VERSION) {
+                self::applyLegacy($version === null && !$pdo->query("SELECT OBJECT_ID('dbo.SendMail_Users', 'U')")->fetchColumn());
+                AgilityMigration::run($pdo);
+                $stmt = $pdo->prepare("UPDATE dbo.SendMail_Settings SET setting_value=:version, updated_at=SYSDATETIME() WHERE setting_key='schema_version'");
+                $stmt->execute([':version' => self::VERSION]);
+                if (!$stmt->rowCount()) {
+                    $stmt = $pdo->prepare("INSERT INTO dbo.SendMail_Settings(setting_key, setting_value) VALUES ('schema_version', :version)");
+                    $stmt->execute([':version' => self::VERSION]);
+                }
+            }
+            $pdo->commit();
+            self::$checked = true;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        } finally { self::$migrating = false; }
+    }
+
+    private static function applyLegacy(bool $seed): void
     {
         $pdo = Database::pdo();
 
@@ -461,12 +510,13 @@ final class Schema
         self::ensureIdGenerators($pdo);
         self::ensureValueDefaults($pdo);
         self::ensureLocalDateDefaults($pdo);
-        self::seedInitialAdmin();
-        self::seedDefaultBranch();
-        self::seedTemplate();
-        self::seedInvoiceTemplate();
-        self::ensureBranchScopedDefaults();
-        self::removeOrphanCopiedCampaignTemplates($pdo);
+        if ($seed) {
+            self::seedInitialAdmin();
+            self::seedDefaultBranch();
+            self::seedTemplate();
+            self::seedInvoiceTemplate();
+            self::ensureBranchScopedDefaults();
+        }
     }
 
     private static function ensureIdGenerators(PDO $pdo): void

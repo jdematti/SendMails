@@ -65,6 +65,37 @@ final class ClientRepository
         return array_slice($rows, 0, $limit);
     }
 
+    public static function page(string $term, array $plans, int $page = 1, bool $idsOnly = false): array
+    {
+        $select = self::selectSql();
+        $sql = 'WITH clients AS (SELECT ' . $select . ' FROM ' . self::sourceSql() . ') ';
+        $where = ["(email IS NOT NULL OR telefono_movil IS NOT NULL)"];
+        $params = [];
+        if ($term !== '') {
+            $conditions = [];
+            foreach (['razon_social', 'codigo_cliente', 'email', 'telefono_movil', 'oid'] as $i => $field) {
+                $conditions[] = "$field LIKE :q$i";
+                $params[":q$i"] = '%' . mb_substr($term, 0, 150) . '%';
+            }
+            $where[] = '(' . implode(' OR ', $conditions) . ')';
+        }
+        if ($plans) {
+            $keys = [];
+            foreach (array_slice($plans, 0, 100) as $i => $plan) {
+                $keys[] = ":plan$i"; $params[":plan$i"] = (string) $plan;
+            }
+            $where[] = 'plan_contratado IN (' . implode(',', $keys) . ')';
+        }
+        $sql .= ($idsOnly ? 'SELECT oid' : 'SELECT *, COUNT(*) OVER() AS result_total') .
+            ' FROM clients WHERE ' . implode(' AND ', $where) . ' ORDER BY razon_social, codigo_cliente, oid';
+        if (!$idsOnly) $sql .= ' OFFSET ' . ((max(1, $page) - 1) * 50) . ' ROWS FETCH NEXT 50 ROWS ONLY';
+        $stmt = self::pdo()->prepare($sql);
+        $stmt->execute($params);
+        if ($idsOnly) return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $rows = $stmt->fetchAll();
+        return ['rows' => $rows, 'total' => (int) ($rows[0]['result_total'] ?? 0), 'page' => max(1, $page), 'size' => 50];
+    }
+
     public static function plans(): array
     {
         $map = self::columnMap();
@@ -88,6 +119,13 @@ final class ClientRepository
             return [];
         }
 
+        if (count($oids) > 500) {
+            $rows = [];
+            foreach (array_chunk(array_values(array_unique($oids)), 500) as $chunk) {
+                array_push($rows, ...self::findByOids($chunk));
+            }
+            return $rows;
+        }
         $placeholders = [];
         $params = [];
         foreach ($oids as $index => $oid) {
@@ -178,7 +216,16 @@ final class ClientRepository
 
     public static function countWithValidEmail(): int
     {
-        return count(self::allWithValidEmail());
+        return LocalCache::remember('valid_emails:' . (int) BranchRepository::currentId(), 60, static function (): int {
+            $map = self::columnMap();
+            $email = self::trimmedExpression($map['email']);
+            $stmt = self::pdo()->query('SELECT ' . $email . ' FROM ' . self::sourceSql() . " WHERE NULLIF($email, '') IS NOT NULL");
+            $count = 0;
+            while (($value = $stmt->fetchColumn()) !== false) {
+                if (filter_var($value, FILTER_VALIDATE_EMAIL)) $count++;
+            }
+            return $count;
+        });
     }
 
     public static function allWithEmail(): array

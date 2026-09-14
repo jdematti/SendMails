@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 final class Auth
 {
+    private static array $userCache = [];
+
     private const PUBLIC_PAGES = [
         'login.php',
         'forgot_password.php',
@@ -88,6 +90,7 @@ final class Auth
         }
 
         session_regenerate_id(true);
+        self::$userCache = [];
         $_SESSION['auth_user_id'] = (int) $user['id'];
         $_SESSION['auth_last_activity'] = time();
         unset($_SESSION['branch_id']);
@@ -97,6 +100,7 @@ final class Auth
 
     public static function logout(): void
     {
+        self::$userCache = [];
         $_SESSION = [];
         if (ini_get('session.use_cookies')) {
             $params = session_get_cookie_params();
@@ -199,7 +203,7 @@ final class Auth
             return null;
         }
 
-        $user = UserRepository::findActive($id);
+        $user = self::$userCache[$id] ?? (self::$userCache[$id] = UserRepository::findActive($id));
         if (!$user) {
             self::logout();
             session_start();

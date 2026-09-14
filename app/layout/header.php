@@ -4,7 +4,7 @@ $currentUser = Auth::currentUser();
 $isAdminUser = Auth::isAdmin();
 $currentBranch = $currentUser && Database::configExists() ? BranchRepository::selected() : null;
 $navItems = [
-    'index.php' => 'Dashboard',
+    'index.php' => 'Inicio',
     'clients.php' => 'Clientes',
 ];
 $templateItems = [
@@ -14,13 +14,11 @@ $templateItems = [
 ];
 $campaignItems = [
     ['href' => 'send.php', 'label' => 'Crear Campaña', 'pages' => ['send.php']],
-    ['href' => 'campaigns.php', 'label' => 'Gestion Campañas', 'pages' => ['campaigns.php']],
-    ['href' => 'queue.php?type=campaigns', 'label' => 'Cola Campañas', 'pages' => ['queue.php'], 'type' => 'campaigns'],
+    ['href' => 'activity.php?kind=campaign', 'label' => 'Gestion Campañas', 'pages' => ['campaigns.php']],
 ];
 $invoiceItems = [
     ['href' => 'invoices.php', 'label' => 'Preparar Facturas', 'pages' => ['invoices.php']],
-    ['href' => 'invoice_sends.php', 'label' => 'Gestion Facturas', 'pages' => ['invoice_sends.php']],
-    ['href' => 'queue.php?type=invoices', 'label' => 'Cola Facturas', 'pages' => ['queue.php', 'invoice_queue.php'], 'type' => 'invoices'],
+    ['href' => 'activity.php?kind=invoice', 'label' => 'Gestion Facturas', 'pages' => ['invoice_sends.php']],
 ];
 $configItems = [
     'users.php' => 'Usuarios',
@@ -30,7 +28,7 @@ $configItems = [
     'config_db.php' => 'Base de datos',
 ];
 $tailNavItems = [
-    'logs.php' => 'Logs',
+    'activity.php' => 'Seguimiento de envíos',
 ];
 $isSubItemActive = static function (array $item) use ($currentPage): bool {
     if ($currentPage === 'queue.php' && isset($item['type'])) {
@@ -66,6 +64,7 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
     <title><?= e($pageTitle ?? APP_NAME) ?> | <?= APP_NAME ?></title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="stylesheet" href="assets/css/app.css">
+    <link rel="stylesheet" href="assets/css/agility.css">
 </head>
 <body>
 <div class="app-shell">

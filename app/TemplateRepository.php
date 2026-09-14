@@ -96,7 +96,7 @@ final class TemplateRepository
             $stmt = Database::pdo()->prepare(
                 'UPDATE dbo.SendMail_Templates
                  SET name = :name, subject = :subject, html_body = :html_body, is_active = :is_active,
-                     attachments_json = COALESCE(:attachments_json, attachments_json), updated_at = SYSDATETIME()
+                     attachments_json = COALESCE(:attachments_json, attachments_json), updated_at = SYSDATETIME(), content_revision = content_revision + 1
                  WHERE id = :id AND branch_id = :branch_id'
             );
             $stmt->execute([

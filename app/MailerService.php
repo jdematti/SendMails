@@ -125,6 +125,7 @@ final class MailerService
                 continue;
             }
 
+            $delivered = false;
             try {
                 if (trim((string) $smtp['host']) === '' || trim((string) $smtp['from_email']) === '') {
                     throw new RuntimeException('La configuracion SMTP de la sucursal esta incompleta.');
@@ -134,6 +135,7 @@ final class MailerService
                     'unsubscribe_url' => (string) $context['unsubscribe_url'],
                     'attachments' => CampaignAttachments::fromJson($item['attachments_json'] ?? null),
                 ]);
+                $delivered = true;
                 QueueRepository::markSent((int) $item['id']);
                 QueueRepository::insertLog([
                     'branch_id' => $item['branch_id'] ?? null,
@@ -154,6 +156,14 @@ final class MailerService
                 ]);
                 $result['sent']++;
             } catch (Throwable $e) {
+                if ($delivered) {
+                    // Keep sent/sending for review: a retry could duplicate the actual email.
+                    QueueRepository::markNeedsReview((int) $item['id'], $e->getMessage());
+                    $result['errors'][] = 'Envio realizado; revisar su registro: ' . $e->getMessage();
+                    QueueRepository::updateCampaignTotals((int) ($item['campaign_id'] ?? 0));
+                    continue;
+                }
+
                 $message = $e->getMessage();
                 QueueRepository::markFailed((int) $item['id'], $message);
                 QueueRepository::insertLog([

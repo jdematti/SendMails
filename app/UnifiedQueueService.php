@@ -121,7 +121,7 @@ final class UnifiedQueueService
         return $summary;
     }
 
-    public static function processStep(string $type, string $channel = self::CHANNEL_ALL): array
+    public static function processStep(string $type, string $channel = self::CHANNEL_ALL, bool $withCounts = true): array
     {
         $type = self::normalizeType($type);
         $channel = self::normalizeChannel($channel);
@@ -129,7 +129,7 @@ final class UnifiedQueueService
         if ($target === null) {
             return [
                 'ok' => true, 'processed' => 0, 'sent' => 0, 'failed' => 0, 'skipped' => 0,
-                'errors' => [], 'pending' => self::pendingCount($type, $channel), 'type' => null,
+                'errors' => [], 'pending' => $withCounts ? self::pendingCount($type, $channel) : 0, 'type' => null,
                 'channel' => null, 'interval_seconds' => 0,
             ];
         }
@@ -150,7 +150,7 @@ final class UnifiedQueueService
             'failed' => (int) $result['failed'],
             'skipped' => (int) ($result['skipped'] ?? 0),
             'errors' => $result['errors'],
-            'pending' => self::pendingCount($type, $channel),
+            'pending' => $withCounts ? self::pendingCount($type, $channel) : 0,
             'type' => $target['type'],
             'channel' => $target['channel'],
             'interval_seconds' => max(0, min((int) ($result['interval_seconds'] ?? 0), 3600)),
@@ -173,18 +173,18 @@ final class UnifiedQueueService
 
         if ($channel !== self::CHANNEL_WHATSAPP) {
             if ($type !== self::TYPE_INVOICES) {
-                $add($targets, self::TYPE_CAMPAIGNS, self::CHANNEL_EMAIL, QueueRepository::pending(1));
+                $add($targets, self::TYPE_CAMPAIGNS, self::CHANNEL_EMAIL, QueueRepository::pending(1, true));
             }
             if ($type !== self::TYPE_CAMPAIGNS) {
-                $add($targets, self::TYPE_INVOICES, self::CHANNEL_EMAIL, InvoiceRepository::pending(1));
+                $add($targets, self::TYPE_INVOICES, self::CHANNEL_EMAIL, InvoiceRepository::pending(1, true));
             }
         }
         if ($channel !== self::CHANNEL_EMAIL) {
             if ($type !== self::TYPE_INVOICES) {
-                $add($targets, self::TYPE_CAMPAIGNS, self::CHANNEL_WHATSAPP, WhatsAppRepository::pending(WhatsAppRepository::SOURCE_CAMPAIGN, 1));
+                $add($targets, self::TYPE_CAMPAIGNS, self::CHANNEL_WHATSAPP, WhatsAppRepository::pending(WhatsAppRepository::SOURCE_CAMPAIGN, 1, true));
             }
             if ($type !== self::TYPE_CAMPAIGNS) {
-                $add($targets, self::TYPE_INVOICES, self::CHANNEL_WHATSAPP, WhatsAppRepository::pending(WhatsAppRepository::SOURCE_INVOICE, 1));
+                $add($targets, self::TYPE_INVOICES, self::CHANNEL_WHATSAPP, WhatsAppRepository::pending(WhatsAppRepository::SOURCE_INVOICE, 1, true));
             }
         }
         if (!$targets) {

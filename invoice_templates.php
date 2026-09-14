@@ -17,6 +17,9 @@ try {
 }
 
 require __DIR__ . '/app/layout/header.php';
+$draftKind = 'invoice_template';
+$draftEditor = 'invoice_template_edit.php';
+require __DIR__ . '/app/layout/template_drafts.php';
 ?>
 
 <?php if ($error): ?>

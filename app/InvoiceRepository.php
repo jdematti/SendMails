@@ -10,13 +10,14 @@ final class InvoiceRepository
     public const BATCH_STATUS_STOPPED = 'stopped';
     public const BATCH_STATUS_COMPLETED = 'completed';
 
-    public static function templates(): array
+    public static function templates(bool $metadataOnly = false): array
     {
         Schema::ensure();
         [$branchWhere, $branchParams] = BranchRepository::activeBranchWhere();
         $whereSql = $branchWhere !== '' ? 'WHERE ' . $branchWhere : '';
+        $columns = $metadataOnly ? "id, name, subject, is_active" : "*";
         $stmt = Database::pdo()->prepare(
-            "SELECT * FROM dbo.SendMail_InvoiceTemplates
+            "SELECT $columns FROM dbo.SendMail_InvoiceTemplates
              $whereSql
              ORDER BY is_active DESC, id ASC"
         );
@@ -84,7 +85,7 @@ final class InvoiceRepository
                      test_mode = :test_mode,
                      test_email = :test_email,
                      is_active = :is_active,
-                     updated_at = SYSDATETIME()
+                     updated_at = SYSDATETIME(), content_revision = content_revision + 1
                  WHERE id = :id AND branch_id = :branch_id'
             );
             $payload[':id'] = $id;
@@ -108,7 +109,7 @@ final class InvoiceRepository
         return (int) $stmt->fetchColumn();
     }
 
-    public static function search(string $dueDate, string $status, bool $includeSent, array $template, array $filters = [], int $limit = 250, string $channel = 'email'): array
+    public static function search(string $dueDate, string $status, bool $includeSent, array $template, array $filters = [], int $limit = 250, string $channel = 'email', int $page = 1, bool $withTokens = true): array
     {
         Schema::ensure();
         $channel = self::normalizeDeliveryChannel($channel);
@@ -117,7 +118,7 @@ final class InvoiceRepository
         $top = '';
         if ($limit > 0) {
             $limit = max(20, min($limit, 10000));
-            $top = "TOP $limit ";
+            $top = "";
         }
 
         $branchId = (int) (BranchRepository::currentId() ?? 0);
@@ -137,23 +138,36 @@ final class InvoiceRepository
                 FROM FacturasTel F
                 INNER JOIN clientes C ON C.OId COLLATE Modern_Spanish_CI_AS = F.IdCliente
                 WHERE " . implode(' AND ', $criteria['where']) . '
-                ORDER BY F.SNB';
+                ORDER BY F.SNB, F.Id';
+        if ($limit > 0) $sql .= ' OFFSET ' . ((max(1, $page) - 1) * $limit) . ' ROWS FETCH NEXT ' . $limit . ' ROWS ONLY';
 
         $stmt = self::sourcePdo()->prepare($sql);
         $stmt->execute($criteria['params']);
         $rows = [];
-        foreach ($stmt->fetchAll() as $index => $row) {
+        $index = 0;
+        while ($row = $stmt->fetch()) {
             $row = self::normalizeInvoiceRow($row, $template);
             $hasEmail = filter_var((string) $row['email'], FILTER_VALIDATE_EMAIL) !== false;
             $hasPhone = trim((string) ($row['telefono_movil'] ?? '')) !== '';
-            if (($channel === 'email' && !$hasEmail) || ($channel === 'whatsapp' && !$hasPhone) || ($channel === 'both' && !$hasEmail && !$hasPhone)) {
-                continue;
-            }
-            $row['selection_token'] = self::selectionToken($row, $index);
+            $row['valid_email'] = $hasEmail;
+            $row['valid_phone'] = WhatsAppPhone::normalize((string) ($row['telefono_movil'] ?? '')) !== null;
+            if ($withTokens) $row['selection_token'] = self::selectionToken($row, $index++);
+
             $rows[] = $row;
         }
 
         return $rows;
+    }
+
+    public static function matchingIds(string $dueDate, string $status, bool $includeSent, array $filters = [], string $channel = 'email'): array
+    {
+        Schema::ensure();
+        $criteria = self::invoiceSearchCriteria($dueDate, $status, $includeSent, $filters, self::normalizeDeliveryChannel($channel), self::invoicePhoneExpression());
+        $stmt = self::sourcePdo()->prepare('SELECT CONVERT(nvarchar(80), F.Id) FROM FacturasTel F
+            INNER JOIN clientes C ON C.OId COLLATE Modern_Spanish_CI_AS = F.IdCliente
+            WHERE ' . implode(' AND ', $criteria['where']) . ' ORDER BY F.SNB, F.Id');
+        $stmt->execute($criteria['params']);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
 
     public static function searchTotal(string $dueDate, string $status, bool $includeSent, array $filters = [], string $channel = 'email'): int
@@ -194,16 +208,17 @@ final class InvoiceRepository
     private static function invoiceSearchCriteria(string $dueDate, string $status, bool $includeSent, array $filters, string $channel, string $phoneExpression): array
     {
         $date = DateTimeImmutable::createFromFormat('!Y-m-d', $dueDate);
-        if (!$date) {
+        if (!$date || $date->format('Y-m-d') !== $dueDate) {
             throw new InvalidArgumentException('Selecciona un vencimiento valido.');
         }
 
         $where = [
-            'CONVERT(date, F.V1_FechaVto) = CONVERT(date, :due_date, 112)',
+            'F.V1_FechaVto >= CONVERT(date, :due_date, 112)',
+            'F.V1_FechaVto < CONVERT(date, :next_date, 112)',
             'F.Autorizada = 1',
             "F.Estado <> 'A'",
         ];
-        $validEmailSql = "(NULLIF(LTRIM(RTRIM(C.DirEMail)), '') IS NOT NULL AND C.DirEMail NOT LIKE '%tiene%' AND LTRIM(RTRIM(C.DirEMail)) LIKE '%_@_%._%')";
+        $validEmailSql = "NULLIF(LTRIM(RTRIM(C.DirEMail)), '') IS NOT NULL";
         $validPhoneSql = "NULLIF($phoneExpression, '') IS NOT NULL";
         if ($channel === 'email') {
             $where[] = $validEmailSql;
@@ -214,6 +229,7 @@ final class InvoiceRepository
         }
         $params = [
             ':due_date' => $date->format('Ymd'),
+            ':next_date' => $date->modify('+1 day')->format('Ymd'),
         ];
 
         if ($status !== '') {
@@ -228,6 +244,13 @@ final class InvoiceRepository
             $where[] = 'ISNULL(F.mail_enviado, 0) = 0';
         }
 
+        if (isset($filters['ids'])) {
+            $keys = [];
+            foreach (array_slice($filters['ids'], 0, 500) as $i => $id) {
+                $keys[] = ":id$i"; $params[":id$i"] = (string) $id;
+            }
+            $where[] = $keys ? 'CONVERT(nvarchar(80), F.Id) IN (' . implode(',', $keys) . ')' : '1=0';
+        }
         $snb = trim((string) ($filters['snb'] ?? ''));
         if ($snb !== '') {
             $where[] = 'LTRIM(RTRIM(F.SNB)) LIKE :snb';
@@ -310,7 +333,7 @@ final class InvoiceRepository
         return array_values($items);
     }
 
-    public static function createQueue(int $templateId, array $invoices, string $name = '', ?string $scheduledAt = null): int
+    public static function createQueue(int $templateId, array $invoices, string $name = '', ?string $scheduledAt = null, ?string $snapshot = null, ?int &$createdBatchId = null): int
     {
         Schema::ensure();
         if (!$invoices) {
@@ -333,8 +356,11 @@ final class InvoiceRepository
             $name .= ' - ' . date('d/m/Y H:i');
         }
 
+        $snapshot = $snapshot ?? MessageSnapshot::capture(self::findTemplate($templateId) ?? [], false);
+        $isTest = !empty(json_decode($snapshot, true, 512, JSON_THROW_ON_ERROR)['test_mode']);
         $pdo = Database::pdo();
-        $pdo->beginTransaction();
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) $pdo->beginTransaction();
 
         try {
             $batchStmt = $pdo->prepare(
@@ -354,50 +380,51 @@ final class InvoiceRepository
                 ':total_queued' => count($invoices),
             ]);
             $batchId = (int) $batchStmt->fetchColumn();
+            $createdBatchId = $batchId;
+            $snapshotStmt = $pdo->prepare('UPDATE dbo.SendMail_InvoiceBatches SET message_snapshot = :snapshot WHERE id = :id');
+            $snapshotStmt->execute([':snapshot' => $snapshot, ':id' => $batchId]);
 
-            $stmt = $pdo->prepare(
-            'INSERT INTO dbo.SendMail_InvoiceQueue
-             (branch_id, batch_id, template_id, invoice_id, snb, client_name, email_to, amount, due_date, due_date_label, invoice_url, context_json, status, attempts, scheduled_at)
-             VALUES
-             (:branch_id, :batch_id, :template_id, :invoice_id, :snb, :client_name, :email_to, :amount, CONVERT(date, NULLIF(:due_date, \'\'), 23), :due_date_label, :invoice_url, :context_json, :status, 0, COALESCE(CONVERT(datetime2(0), NULLIF(:scheduled_at, \'\'), 120), SYSDATETIME()))'
-            );
+            $queueRows = [];
 
             $count = 0;
             foreach ($invoices as $invoice) {
-                $stmt->execute([
-                    ':branch_id' => $branchId,
-                    ':batch_id' => $batchId,
-                    ':template_id' => $templateId,
-                    ':invoice_id' => (string) ($invoice['invoice_id'] ?? ''),
-                    ':snb' => (string) ($invoice['snb'] ?? ''),
-                    ':client_name' => (string) ($invoice['client_name'] ?? ''),
-                    ':email_to' => (string) ($invoice['email'] ?? ''),
-                    ':amount' => (string) ($invoice['amount'] ?? '0'),
-                    ':due_date' => (string) ($invoice['due_date'] ?? ''),
-                    ':due_date_label' => (string) ($invoice['due_date_label'] ?? ''),
-                    ':invoice_url' => (string) ($invoice['invoice_url'] ?? ''),
-                    ':context_json' => json_encode($invoice, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                    ':status' => 'pending',
-                    ':scheduled_at' => (string) ($scheduledAt ?? ''),
-                ]);
+                $queueRows[] = [
+                    'branch_id' => $branchId,
+                    'batch_id' => $batchId,
+                    'template_id' => $templateId,
+                    'invoice_id' => (string) ($invoice['invoice_id'] ?? ''),
+                    'snb' => (string) ($invoice['snb'] ?? ''),
+                    'client_name' => (string) ($invoice['client_name'] ?? ''),
+                    'email_to' => (string) ($invoice['email'] ?? ''),
+                    'is_test' => $isTest ? 1 : 0,
+                    'amount' => (string) ($invoice['amount'] ?? '0'),
+                    'due_date' => trim((string) ($invoice['due_date'] ?? '')) ?: null,
+                    'due_date_label' => (string) ($invoice['due_date_label'] ?? ''),
+                    'invoice_url' => (string) ($invoice['invoice_url'] ?? ''),
+                    'context_json' => json_encode($invoice, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'status' => 'pending',
+                    'scheduled_at' => $scheduledAt ?? date('Y-m-d H:i:s'),
+                ];
                 $count++;
             }
 
-            $pdo->commit();
+            BulkInsert::rows($pdo, 'SendMail_InvoiceQueue', $queueRows);
+            if ($ownsTransaction) $pdo->commit();
             return $count;
         } catch (Throwable $e) {
-            $pdo->rollBack();
+            if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
     }
 
-    public static function pending(int $limit): array
+    public static function pending(int $limit, bool $metadataOnly = false): array
     {
         Schema::ensure();
+        $columns = $metadataOnly ? 'q.id, q.scheduled_at, q.branch_id' : 'q.*, b.message_snapshot';
         $limit = max(1, min($limit, 10000));
         [$branchWhere, $branchParams] = BranchRepository::activeBranchWhere('q');
         $branchSql = $branchWhere !== '' ? ' AND ' . $branchWhere : '';
-        $sql = "SELECT TOP $limit q.*, t.subject, t.html_body, t.from_email, t.from_name, t.reply_to, t.bcc, t.web, t.loc_prefix, t.domicilio, t.facebook, t.instagram, t.whatsapp, t.test_mode, t.test_email
+        $sql = "SELECT TOP $limit $columns
                 FROM dbo.SendMail_InvoiceQueue q
                 INNER JOIN dbo.SendMail_InvoiceTemplates t ON t.id = q.template_id
                 LEFT JOIN dbo.SendMail_InvoiceBatches b ON b.id = q.batch_id
@@ -408,7 +435,7 @@ final class InvoiceRepository
                 ORDER BY q.scheduled_at, q.id";
         $stmt = Database::pdo()->prepare($sql);
         $stmt->execute($branchParams);
-        return $stmt->fetchAll();
+        return $metadataOnly ? $stmt->fetchAll() : array_map([MessageSnapshot::class, 'apply'], $stmt->fetchAll());
     }
 
     public static function pendingCount(): int
@@ -444,17 +471,23 @@ final class InvoiceRepository
         return $stmt->rowCount() > 0;
     }
 
-    public static function markSent(int $id, string $invoiceId, ?int $branchId = null): void
+    public static function markSent(int $id, string $invoiceId, ?int $branchId = null, bool $isTest = false): void
     {
-        $stmt = Database::pdo()->prepare("UPDATE dbo.SendMail_InvoiceQueue SET status = 'sent', sent_at = SYSDATETIME(), last_error = NULL WHERE id = :id");
-        $stmt->execute([':id' => $id]);
-        self::markInvoiceSent($invoiceId, $branchId);
+        $stmt = Database::pdo()->prepare("UPDATE dbo.SendMail_InvoiceQueue SET status = 'sent', is_test = :is_test, sent_at = SYSDATETIME(), last_error = NULL WHERE id = :id");
+        $stmt->execute([':id' => $id, ':is_test' => $isTest ? 1 : 0]);
+        if (!$isTest) self::markInvoiceSent($invoiceId, $branchId);
     }
 
     public static function markFailed(int $id, string $error): void
     {
         $stmt = Database::pdo()->prepare("UPDATE dbo.SendMail_InvoiceQueue SET status = 'failed', last_error = :error WHERE id = :id");
         $stmt->execute([':id' => $id, ':error' => $error]);
+    }
+
+    public static function markNeedsReview(int $id, string $error): void
+    {
+        $stmt = Database::pdo()->prepare("UPDATE dbo.SendMail_InvoiceQueue SET status='sending', last_error=:error WHERE id=:id");
+        $stmt->execute([':id'=>$id, ':error'=>'El proveedor acepto el email; revisar la factura y su registro antes de reenviar. ' . $error]);
     }
 
     public static function updateInvoiceBatchTotals(int $batchId): void

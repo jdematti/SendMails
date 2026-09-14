@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/app/bootstrap.php';
 
+$draftId = max(0, (int) ($_POST['draft_id'] ?? query_string('draft', '0')));
+$draftContext = null;
+$draftKind = 'invoice_template';
+$draftEditor = 'invoice_template_edit.php';
 $id = normalize_int(query_string('id'), 0, 0);
 $sourceId = $id > 0 ? 0 : normalize_int(query_string('source_id'), 0, 0);
 $pageTitle = $id > 0 ? 'Editar plantilla de facturas' : 'Nueva plantilla de facturas';
@@ -92,6 +96,9 @@ try {
             $template['is_active'] = 1;
         }
     }
+    $draftContext = TemplateDraft::load($draftKind, $draftId, $id, $template);
+    $template = $draftContext['template'];
+    $id = (int) $draftContext['source_id'];
 } catch (Throwable $e) {
     $error = $e->getMessage();
 }
@@ -120,11 +127,21 @@ if ($requestMethod === 'POST') {
     ];
 
     try {
+        if (!$draftContext) throw new RuntimeException('No se pudo cargar el borrador.');
+        if (!$draftContext['id']) $draftContext['base_version'] = post_string('base_version');
+        if (post_string('action') === 'save_copy') {
+            $id = 0;
+            $draftContext = TemplateDraft::load($draftKind, 0, 0, $template);
+            TemplateDraft::store($draftContext, $template, 0);
+        } else {
+            TemplateDraft::store($draftContext, $template, (int) post_string('draft_revision'));
+        }
+        if (post_string('action') === 'save_draft') redirect('invoice_template_edit.php?draft=' . $draftContext['id']);
         if (post_string('action', 'save') === 'send_preview') {
             InvoiceMailerService::sendTemplatePreview($previewEmail, $template, $id > 0 ? $id : null);
             flash('success', 'Correo de prueba enviado correctamente a ' . $previewEmail . '.');
         } else {
-            $savedId = InvoiceRepository::saveTemplate($id > 0 ? $id : null, $template);
+            $savedId = TemplateDraft::publish($draftContext, static fn(): int => InvoiceRepository::saveTemplate($id > 0 ? $id : null, $template));
             flash('success', 'Plantilla de facturas guardada.');
             redirect('invoice_template_edit.php?id=' . $savedId);
         }
@@ -140,10 +157,15 @@ require __DIR__ . '/app/layout/header.php';
 
 <?php if ($error): ?><div class="alert error"><?= e($error) ?></div><?php endif; ?>
 
+<?php require __DIR__ . '/app/layout/template_drafts.php'; ?>
+<p class="hint" data-editor-status><?= !empty($draftContext['id']) ? 'Borrador compartido #' . (int) $draftContext['id'] . ' · guardado' : 'Plantilla publicada / nuevo documento' ?></p>
 <section class="split template-editor-layout">
     <div class="card template-editor-card">
         <form method="post" class="form-grid" data-wait-form>
             <?= csrf_field() ?>
+            <input type="hidden" name="draft_id" value="<?= (int) ($draftContext['id'] ?? 0) ?>">
+            <input type="hidden" name="draft_revision" value="<?= (int) ($draftContext['revision'] ?? 0) ?>">
+            <input type="hidden" name="base_version" value="<?= e((string) ($draftContext['base_version'] ?? '')) ?>">
             <?php if ($id === 0): ?>
                 <div class="field full template-source-field">
                     <label for="source_template_id">Crear desde plantilla existente</label>
@@ -235,14 +257,16 @@ require __DIR__ . '/app/layout/header.php';
                 <p class="hint">Envia el asunto, remitente y HTML actuales con datos de factura de ejemplo, sin guardar la plantilla.</p>
             </div>
             <div class="field full actions">
-                <button type="submit" name="action" value="save">Guardar plantilla</button>
+                <button type="submit" name="action" value="save_draft" class="btn secondary" formnovalidate>Guardar borrador</button>
+                <button type="submit" name="action" value="save">Publicar plantilla</button>
+                <?php if ($id > 0): ?><button type="submit" name="action" value="save_copy" class="btn secondary">Publicar como nueva</button><?php endif; ?>
                 <a class="btn secondary" href="invoice_templates.php" data-wait>Volver</a>
             </div>
         </form>
     </div>
     <div class="card template-preview-card">
         <h2>Vista previa</h2>
-        <iframe class="preview-frame" srcdoc="<?= e(InvoiceMailerService::render((string) $template['html_body'], $sample)) ?>"></iframe>
+        <iframe sandbox="" class="preview-frame" srcdoc="<?= e(InvoiceMailerService::render((string) $template['html_body'], $sample)) ?>"></iframe>
     </div>
 </section>
 
@@ -258,4 +282,5 @@ require __DIR__ . '/app/layout/header.php';
 })();
 </script>
 
+<script src="assets/js/template-state.js" defer></script>
 <?php require __DIR__ . '/app/layout/footer.php'; ?>

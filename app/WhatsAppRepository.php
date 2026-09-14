@@ -182,7 +182,14 @@ final class WhatsAppRepository
             && self::bodyParameterCount($template) === count(self::templateVariables($template));
     }
 
-    public static function createBatch(string $sourceType, int $templateId, string $name, array $rows, ?string $scheduledAt = null): array
+    public static function optedOutPhones(int $branchId): array
+    {
+        $stmt = Database::pdo()->prepare("SELECT phone_to FROM dbo.SendMail_WhatsAppOptOuts WHERE branch_id=:branch AND scope='campaign'");
+        $stmt->execute([':branch' => $branchId]);
+        return array_fill_keys($stmt->fetchAll(PDO::FETCH_COLUMN), true);
+    }
+
+    public static function createBatch(string $sourceType, int $templateId, string $name, array $rows, ?string $scheduledAt = null, ?string $snapshot = null): array
     {
         Schema::ensure();
         self::assertSourceType($sourceType);
@@ -200,6 +207,7 @@ final class WhatsAppRepository
         $config = Settings::whatsapp($branchId);
         WhatsAppBusinessService::assertConfigured($config);
 
+        $blocked = $sourceType === self::SOURCE_CAMPAIGN ? self::optedOutPhones($branchId) : [];
         $prepared = [];
         $invalid = 0;
         $duplicates = 0;
@@ -212,7 +220,7 @@ final class WhatsAppRepository
                 $invalid++;
                 continue;
             }
-            if ($sourceType === self::SOURCE_CAMPAIGN && self::isOptedOut($branchId, $phone, self::SOURCE_CAMPAIGN)) {
+            if ($sourceType === self::SOURCE_CAMPAIGN && isset($blocked[$phone])) {
                 $optedOut++;
                 continue;
             }
@@ -235,8 +243,10 @@ final class WhatsAppRepository
         if ($name === '') {
             $name = ($sourceType === self::SOURCE_INVOICE ? 'Facturas WhatsApp' : 'Campana WhatsApp') . ' - ' . date('d/m/Y H:i');
         }
+        $snapshot = $snapshot ?? MessageSnapshot::capture(self::findTemplate($templateId) ?? [], true);
         $pdo = Database::pdo();
-        $pdo->beginTransaction();
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) $pdo->beginTransaction();
         try {
             $batchStmt = $pdo->prepare(
                 'INSERT INTO dbo.SendMail_WhatsAppBatches
@@ -253,30 +263,28 @@ final class WhatsAppRepository
                 ':total_queued' => count($prepared),
             ]);
             $batchId = (int) $batchStmt->fetchColumn();
-            $queueStmt = $pdo->prepare(
-                'INSERT INTO dbo.SendMail_WhatsAppQueue
-                 (branch_id, batch_id, template_id, client_oid, client_code, client_name, source_record_id, phone_raw, phone_to, context_json, status, attempts, scheduled_at)
-                 VALUES
-                 (:branch_id, :batch_id, :template_id, :client_oid, :client_code, :client_name, :source_record_id, :phone_raw, :phone_to, :context_json, :status, 0, COALESCE(CONVERT(datetime2(0), NULLIF(:scheduled_at, \'\'), 120), SYSDATETIME()))'
-            );
+            $snapshotStmt = $pdo->prepare('UPDATE dbo.SendMail_WhatsAppBatches SET message_snapshot = :snapshot WHERE id = :id');
+            $snapshotStmt->execute([':snapshot' => $snapshot, ':id' => $batchId]);
+            $queueRows = [];
             foreach ($prepared as $item) {
                 $row = $item['row'];
-                $queueStmt->execute([
-                    ':branch_id' => $branchId,
-                    ':batch_id' => $batchId,
-                    ':template_id' => $templateId,
-                    ':client_oid' => trim((string) ($row['oid'] ?? '')),
-                    ':client_code' => trim((string) ($row['codigo_cliente'] ?? '')),
-                    ':client_name' => trim((string) ($row['razon_social'] ?? $row['client_name'] ?? '')),
-                    ':source_record_id' => $item['source_record_id'],
-                    ':phone_raw' => $item['raw'],
-                    ':phone_to' => $item['phone'],
-                    ':context_json' => json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                    ':status' => 'pending',
-                    ':scheduled_at' => (string) ($scheduledAt ?? ''),
-                ]);
+                $queueRows[] = [
+                    'branch_id' => $branchId,
+                    'batch_id' => $batchId,
+                    'template_id' => $templateId,
+                    'client_oid' => trim((string) ($row['oid'] ?? '')),
+                    'client_code' => trim((string) ($row['codigo_cliente'] ?? '')),
+                    'client_name' => trim((string) ($row['razon_social'] ?? $row['client_name'] ?? '')),
+                    'source_record_id' => $item['source_record_id'],
+                    'phone_raw' => $item['raw'],
+                    'phone_to' => $item['phone'],
+                    'context_json' => json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'status' => 'pending',
+                    'scheduled_at' => $scheduledAt ?? date('Y-m-d H:i:s'),
+                ];
             }
-            $pdo->commit();
+            BulkInsert::rows($pdo, 'SendMail_WhatsAppQueue', $queueRows);
+            if ($ownsTransaction) $pdo->commit();
             return [
                 'batch_id' => $batchId,
                 'queued' => count($prepared),
@@ -285,14 +293,15 @@ final class WhatsAppRepository
                 'opted_out' => $optedOut,
             ];
         } catch (Throwable $e) {
-            $pdo->rollBack();
+            if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
     }
 
-    public static function pending(string $sourceType = '', int $limit = 10): array
+    public static function pending(string $sourceType = '', int $limit = 10, bool $metadataOnly = false): array
     {
         Schema::ensure();
+        $columns = $metadataOnly ? 'q.id, q.scheduled_at, q.branch_id' : 'q.*, b.source_type, b.name AS batch_name, b.message_snapshot';
         $limit = max(1, min($limit, 1000));
         $where = ["q.status = 'pending'", 'q.scheduled_at <= SYSDATETIME()', "b.status IN ('queued', 'processing')"];
         $params = [];
@@ -307,8 +316,7 @@ final class WhatsAppRepository
             $params += $branchParams;
         }
         $stmt = Database::pdo()->prepare(
-            "SELECT TOP $limit q.*, b.source_type, b.name AS batch_name, t.name AS template_name,
-                    t.language, t.category, t.status AS template_status, t.components_json, t.body_variables_json
+            "SELECT TOP $limit $columns
              FROM dbo.SendMail_WhatsAppQueue q
              INNER JOIN dbo.SendMail_WhatsAppBatches b ON b.id = q.batch_id AND b.branch_id = q.branch_id
              INNER JOIN dbo.SendMail_WhatsAppTemplates t ON t.id = q.template_id AND t.branch_id = q.branch_id
@@ -316,7 +324,7 @@ final class WhatsAppRepository
              ORDER BY q.scheduled_at, q.id'
         );
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        return $metadataOnly ? $stmt->fetchAll() : array_map([MessageSnapshot::class, 'apply'], $stmt->fetchAll());
     }
 
     public static function pendingCount(string $sourceType = ''): int

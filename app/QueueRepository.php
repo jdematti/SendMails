@@ -36,7 +36,7 @@ final class QueueRepository
         ];
     }
 
-    public static function createCampaign(int $templateId, string $name, string $mode, array $clients, ?string $scheduledAt = null): int
+    public static function createCampaign(int $templateId, string $name, string $mode, array $clients, ?string $scheduledAt = null, ?string $snapshot = null): int
     {
         Schema::ensure();
         $clients = array_values(array_filter($clients, static function (array $client): bool {
@@ -51,8 +51,10 @@ final class QueueRepository
         if ($branchId <= 0) {
             throw new RuntimeException('Selecciona una sucursal antes de crear la campana.');
         }
+        $snapshot = $snapshot ?? MessageSnapshot::capture(TemplateRepository::find($templateId) ?? [], false);
         $pdo = Database::pdo();
-        $pdo->beginTransaction();
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) $pdo->beginTransaction();
 
         try {
             $campaignStmt = $pdo->prepare(
@@ -69,13 +71,10 @@ final class QueueRepository
                 ':total_queued' => count($clients),
             ]);
             $campaignId = (int) $campaignStmt->fetchColumn();
+            $snapshotStmt = $pdo->prepare('UPDATE dbo.SendMail_Campaigns SET message_snapshot = :snapshot WHERE id = :id');
+            $snapshotStmt->execute([':snapshot' => $snapshot, ':id' => $campaignId]);
 
-            $queueStmt = $pdo->prepare(
-                'INSERT INTO dbo.SendMail_Queue
-                 (branch_id, campaign_id, template_id, client_oid, client_code, client_name, email_to, context_json, status, attempts, scheduled_at)
-                 VALUES
-                 (:branch_id, :campaign_id, :template_id, :client_oid, :client_code, :client_name, :email_to, :context_json, :status, 0, COALESCE(CONVERT(datetime2(0), :scheduled_at, 120), SYSDATETIME()))'
-            );
+            $queueRows = [];
 
             foreach ($clients as $client) {
                 $email = trim((string) ($client['email'] ?? ''));
@@ -83,35 +82,37 @@ final class QueueRepository
                     continue;
                 }
                 $client['branch_id'] = $branchId;
-                $queueStmt->execute([
-                    ':branch_id' => $branchId,
-                    ':campaign_id' => $campaignId,
-                    ':template_id' => $templateId,
-                    ':client_oid' => trim((string) ($client['oid'] ?? '')),
-                    ':client_code' => (string) ($client['codigo_cliente'] ?? ''),
-                    ':client_name' => (string) ($client['razon_social'] ?? ''),
-                    ':email_to' => $email,
-                    ':context_json' => json_encode($client, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                    ':status' => 'pending',
-                    ':scheduled_at' => $scheduledAt,
-                ]);
+                $queueRows[] = [
+                    'branch_id' => $branchId,
+                    'campaign_id' => $campaignId,
+                    'template_id' => $templateId,
+                    'client_oid' => trim((string) ($client['oid'] ?? '')),
+                    'client_code' => (string) ($client['codigo_cliente'] ?? ''),
+                    'client_name' => (string) ($client['razon_social'] ?? ''),
+                    'email_to' => $email,
+                    'context_json' => json_encode($client, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'status' => 'pending',
+                    'scheduled_at' => $scheduledAt ?? date('Y-m-d H:i:s'),
+                ];
             }
 
-            $pdo->commit();
+            BulkInsert::rows($pdo, 'SendMail_Queue', $queueRows);
+            if ($ownsTransaction) $pdo->commit();
             return $campaignId;
         } catch (Throwable $e) {
-            $pdo->rollBack();
+            if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
     }
 
-    public static function pending(int $limit): array
+    public static function pending(int $limit, bool $metadataOnly = false): array
     {
         Schema::ensure();
+        $columns = $metadataOnly ? 'q.id, q.scheduled_at, q.branch_id' : 'q.*, c.message_snapshot';
         $limit = max(1, min($limit, 10000));
         [$branchWhere, $branchParams] = BranchRepository::activeBranchWhere('q');
         $branchSql = $branchWhere !== '' ? ' AND ' . $branchWhere : '';
-        $sql = "SELECT TOP $limit q.*, t.subject, t.html_body, t.attachments_json
+        $sql = "SELECT TOP $limit $columns
                 FROM dbo.SendMail_Queue q
                 INNER JOIN dbo.SendMail_Templates t ON t.id = q.template_id AND t.branch_id = q.branch_id
                 INNER JOIN dbo.SendMail_Campaigns c ON c.id = q.campaign_id AND c.branch_id = q.branch_id
@@ -122,7 +123,7 @@ final class QueueRepository
                 ORDER BY q.scheduled_at, q.id";
         $stmt = Database::pdo()->prepare($sql);
         $stmt->execute($branchParams);
-        return $stmt->fetchAll();
+        return $metadataOnly ? $stmt->fetchAll() : array_map([MessageSnapshot::class, 'apply'], $stmt->fetchAll());
     }
 
     public static function pendingCount(): int
@@ -168,6 +169,12 @@ final class QueueRepository
     {
         $stmt = Database::pdo()->prepare("UPDATE dbo.SendMail_Queue SET status = 'failed', last_error = :error WHERE id = :id");
         $stmt->execute([':id' => $id, ':error' => $error]);
+    }
+
+    public static function markNeedsReview(int $id, string $error): void
+    {
+        $stmt = Database::pdo()->prepare("UPDATE dbo.SendMail_Queue SET status='sending', last_error=:error WHERE id=:id");
+        $stmt->execute([':id'=>$id, ':error'=>'El proveedor acepto el email; revisar el registro antes de reenviar. ' . $error]);
     }
 
     public static function markSkipped(int $id, string $reason): void

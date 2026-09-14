@@ -111,7 +111,8 @@ try {
     $filterName = query_string('name');
     $channel = query_string('channel', 'email');
     $templateId = normalize_int(query_string('template_id'), 0, 0);
-    $limit = normalize_int(query_string('limit', '250'), 250, 100, 10000);
+    $limit = query_string('limit') === '0' ? 0 : normalize_int(query_string('limit', '250'), 250, 100, 10000);
+    session_write_close();
     if ($dueDate === '') {
         throw new InvalidArgumentException('Selecciona un vencimiento para exportar.');
     }

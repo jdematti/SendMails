@@ -23,9 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         Database::test($config);
         if (post_string('action') === 'save') {
             Database::saveConfig($config);
-            Schema::ensure();
-            flash('success', 'Conexion guardada y tablas del sistema verificadas.');
-            redirect('config_db.php');
+            flash('success', 'Conexion guardada. Para inicializar o actualizar esta base, ejecuta php migrate.php desde la carpeta del sistema.');
         }
         flash('success', 'Conexion SQL Server probada correctamente.');
     } catch (Throwable $e) {
@@ -69,7 +67,7 @@ require __DIR__ . '/app/layout/header.php';
         <div class="field full">
             <div class="actions">
                 <button type="submit" name="action" value="test">Probar conexion</button>
-                <button type="submit" name="action" value="save">Guardar y crear tablas</button>
+                <button type="submit" name="action" value="save">Guardar conexion</button>
             </div>
             <p class="hint">El JSON se guarda en <strong>storage/db_config.json</strong>. La carpeta storage queda bloqueada por .htaccess.</p>
         </div>

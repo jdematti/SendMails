@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/app/bootstrap.php';
 
+$draftId = max(0, (int) ($_POST['draft_id'] ?? query_string('draft', '0')));
+$draftContext = null;
+$draftKind = 'template';
+$draftEditor = 'template_edit.php';
 $id = normalize_int(query_string('id'), 0, 0);
 $sourceId = $id > 0 ? 0 : normalize_int(query_string('source_id'), 0, 0);
 $template = [
@@ -51,6 +55,9 @@ try {
             $template['html_body'] = TemplateRepository::blankHtml();
         }
     }
+    $draftContext = TemplateDraft::load($draftKind, $draftId, $id, $template);
+    $template = $draftContext['template'];
+    $id = (int) $draftContext['source_id'];
     $attachments = CampaignAttachments::fromJson($template['attachments_json'] ?? null);
     $templateLoaded = true;
 } catch (Throwable $e) {
@@ -72,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int) ($_SERVER['CONTENT
     $removeAttachments = array_values(array_filter(is_array($postedRemovals) ? $postedRemovals : [], 'is_string'));
     $uploads = $_FILES['attachments'] ?? [];
     if (is_array($uploads) && !empty($uploads['name']) && array_filter((array) $uploads['name'])) {
-        $uploadNotice = 'Los archivos nuevos todavia no estan guardados. Volve a seleccionarlos antes de guardar o enviar otra prueba.';
+        $uploadNotice = '';
     }
 
     try {
@@ -80,18 +87,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int) ($_SERVER['CONTENT
             throw new RuntimeException('No se pudo cargar la plantilla. Recarga la pagina antes de guardar cambios.');
         }
         $selectedAttachments = CampaignAttachments::withUploads($attachments, is_array($uploads) ? $uploads : [], $removeAttachments);
+        $attachments = $selectedAttachments;
+        $removeAttachments = [];
+        $template['attachments_json'] = CampaignAttachments::toJson($attachments);
+        if (!$draftContext) throw new RuntimeException('No se pudo cargar el borrador.');
+        if (!$draftContext['id']) $draftContext['base_version'] = post_string('base_version');
+        if (post_string('action') === 'save_copy') {
+            $id = 0;
+            $draftContext = TemplateDraft::load($draftKind, 0, 0, $template);
+            TemplateDraft::store($draftContext, $template, 0);
+        } else {
+            TemplateDraft::store($draftContext, $template, (int) post_string('draft_revision'));
+        }
+        $uploadNotice = 'Contenido y adjuntos guardados en el borrador compartido #' . $draftContext['id'] . '.';
+        if (post_string('action') === 'save_draft') redirect('template_edit.php?draft=' . $draftContext['id']);
         if (post_string('action', 'save') === 'send_preview') {
             MailerService::sendTemplatePreview($previewEmail, (string) $template['subject'], (string) $template['html_body'], $id > 0 ? $id : null, $selectedAttachments);
             flash('success', 'Correo de prueba enviado correctamente a ' . $previewEmail . '.');
         } else {
-            $savedId = TemplateRepository::save(
+            $savedId = TemplateDraft::publish($draftContext, static fn(): int => TemplateRepository::save(
                 $id > 0 ? $id : null,
                 (string) $template['name'],
                 (string) $template['subject'],
                 (string) $template['html_body'],
                 (bool) $template['is_active'],
                 $selectedAttachments
-            );
+            ));
             flash('success', 'Plantilla guardada.');
             redirect('template_edit.php?id=' . $savedId);
         }
@@ -108,10 +129,15 @@ require __DIR__ . '/app/layout/header.php';
 <?php if ($error): ?><div class="alert error"><?= e($error) ?></div><?php endif; ?>
 <?php if ($uploadNotice): ?><div class="alert warning"><?= e($uploadNotice) ?></div><?php endif; ?>
 
+<?php require __DIR__ . '/app/layout/template_drafts.php'; ?>
+<p class="hint" data-editor-status><?= !empty($draftContext['id']) ? 'Borrador compartido #' . (int) $draftContext['id'] . ' · guardado' : 'Plantilla publicada / nuevo documento' ?></p>
 <section class="split template-editor-layout">
     <div class="card template-editor-card">
         <form method="post" enctype="multipart/form-data" class="form-grid" data-wait-form>
             <?= csrf_field() ?>
+            <input type="hidden" name="draft_id" value="<?= (int) ($draftContext['id'] ?? 0) ?>">
+            <input type="hidden" name="draft_revision" value="<?= (int) ($draftContext['revision'] ?? 0) ?>">
+            <input type="hidden" name="base_version" value="<?= e((string) ($draftContext['base_version'] ?? '')) ?>">
             <?php if ($id === 0): ?>
                 <div class="field full template-source-field">
                     <label for="source_template_id">Crear desde plantilla existente</label>
@@ -286,14 +312,16 @@ require __DIR__ . '/app/layout/header.php';
                 <p class="hint">Envía el asunto, HTML y adjuntos actuales con datos de ejemplo, sin guardar la plantilla.</p>
             </div>
             <div class="field full actions">
-                <button type="submit" name="action" value="save">Guardar plantilla</button>
+                <button type="submit" name="action" value="save_draft" class="btn secondary" formnovalidate>Guardar borrador</button>
+                <button type="submit" name="action" value="save">Publicar plantilla</button>
+                <?php if ($id > 0): ?><button type="submit" name="action" value="save_copy" class="btn secondary">Publicar como nueva</button><?php endif; ?>
                 <a class="btn secondary" href="templates.php" data-wait>Volver</a>
             </div>
         </form>
     </div>
     <div class="card template-preview-card">
         <h2>Vista previa</h2>
-        <iframe class="preview-frame" data-template-preview srcdoc="<?= e(MailerService::renderCampaignHtml((string) $template['html_body'], [
+        <iframe sandbox="" class="preview-frame" data-template-preview srcdoc="<?= e(MailerService::renderCampaignHtml((string) $template['html_body'], [
             'codigo_cliente' => '0001',
             'razon_social' => 'Cliente de ejemplo',
             'plan_contratado' => 'Plan Premium',
@@ -847,4 +875,5 @@ require __DIR__ . '/app/layout/header.php';
 })();
 </script>
 
+<script src="assets/js/template-state.js" defer></script>
 <?php require __DIR__ . '/app/layout/footer.php'; ?>
