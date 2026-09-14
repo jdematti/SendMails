@@ -28,46 +28,16 @@ function Write-WorkerLog {
     Write-Output $line
 }
 
-$lockStream = $null
-
 try {
-    $lockStream = [System.IO.File]::Open($LockFile, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
-} catch {
-    Write-WorkerLog "Ya hay una ejecucion del worker activa. Se omite esta corrida."
-    exit 0
-}
-
-try {
-    $lockStream.SetLength(0)
-    $lockText = "PID=$PID; START=" + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($lockText)
-    $lockStream.Write($bytes, 0, $bytes.Length)
-    $lockStream.Flush()
-
-    if (!(Test-Path $WorkerPath)) {
-        throw "No se encontro worker.php en $WorkerPath"
-    }
-
+    if (!(Test-Path -LiteralPath $WorkerPath)) { throw 'No se encontro worker.php' }
     Write-WorkerLog "Iniciando worker. Limit=$Limit"
-    $output = & $PhpExe $WorkerPath "--limit=$Limit" 2>&1
+    $output = & $PhpExe $WorkerPath "--limit=$Limit" "--max-seconds=55" 2>&1
     $exitCode = $LASTEXITCODE
-
-    foreach ($line in $output) {
-        Write-WorkerLog ([string]$line)
-    }
-
-    if ($exitCode -ne 0) {
-        throw "El worker finalizo con codigo $exitCode"
-    }
-
-    Write-WorkerLog "Worker finalizado correctamente."
+    foreach ($line in $output) { Write-WorkerLog ([string]$line) }
+    if ($exitCode -ne 0) { throw "El worker finalizo con codigo $exitCode" }
+    Write-WorkerLog 'Worker finalizado.'
     exit 0
 } catch {
     Write-WorkerLog ("ERROR: " + $_.Exception.Message)
     exit 1
-} finally {
-    if ($lockStream -ne $null) {
-        $lockStream.Close()
-        $lockStream.Dispose()
-    }
 }

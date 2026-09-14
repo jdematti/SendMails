@@ -4,6 +4,10 @@ title Actualizar SendMails
 
 rem Ejecutar una copia temporal permite actualizar este mismo archivo con Git.
 if /i "%~1"=="--run" goto run
+set "SM_UPDATE_ORIGINAL=%~f0"
+powershell.exe -NoProfile -Command "$ErrorActionPreference='Stop'; try { $principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent()); if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { Start-Process -FilePath $env:ComSpec -Verb RunAs -ArgumentList ('/d /c '+[char]34+[char]34+$env:SM_UPDATE_ORIGINAL+[char]34+[char]34); exit 5 } } catch { Write-Host $_.Exception.Message; exit 1 }"
+if errorlevel 5 exit /b 0
+if errorlevel 1 goto copy_failed
 set "SM_UPDATE_ROOT=%~dp0"
 set "SM_UPDATE_COPY=%TEMP%\SendMails-pull-%RANDOM%-%RANDOM%.cmd"
 copy /y "%~f0" "%SM_UPDATE_COPY%" >nul
@@ -70,6 +74,14 @@ if errorlevel 1 (
     goto failed
 )
 
+echo Preparando mantenimiento y respaldo...
+set "SM_DEPLOY_PREP=%TEMP%\SendMails-deploy-%RANDOM%-%RANDOM%.ps1"
+git show origin/main:deploy_prepare.ps1 > "%SM_DEPLOY_PREP%"
+if errorlevel 1 goto failed
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SM_DEPLOY_PREP%" -ProjectDir "%CD%"
+if errorlevel 1 goto failed
+del /q "%SM_DEPLOY_PREP%" >nul 2>&1
+
 echo [2/4] Conservando configuracion privada de facturas...
 rem Extrae la clave de versiones anteriores sin imprimirla ni cambiar su valor.
 php -r "$p='storage/invoice_crypto.key'; if (getenv('INVOICE_CRYPTO_KEY') !== false && getenv('INVOICE_CRYPTO_KEY') !== '') { exit(0); } if (is_file($p) && trim((string) file_get_contents($p)) !== '') { exit(0); } $s=is_file('app/InvoiceCrypto.php') ? file_get_contents('app/InvoiceCrypto.php') : ''; if (!preg_match('/private const KEY\s*=\s*\x27([^\x27]+)\x27\s*;/', (string) $s, $m)) { fwrite(STDERR, 'Falta la clave de facturas. Copia storage/invoice_crypto.key desde el respaldo privado antes de actualizar.'.PHP_EOL); exit(1); } if (!is_dir('storage') && !mkdir('storage', 0775, true)) { exit(1); } if (file_put_contents($p, $m[1], LOCK_EX) === false) { exit(1); } echo 'Clave anterior conservada en storage/invoice_crypto.key.'.PHP_EOL;"
@@ -93,6 +105,14 @@ if errorlevel 1 (
 )
 
 echo.
+echo Migrando estructura y fijando mensajes pendientes...
+php migrate.php
+if errorlevel 1 goto failed
+echo Configurando procesamiento automatico sin sesion de Windows...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\install_scheduled_task.ps1" -IntervalMinutes 1
+if errorlevel 1 goto failed
+powershell.exe -NoProfile -Command "$ErrorActionPreference='Stop'; Remove-Item -LiteralPath (Join-Path $env:SM_UPDATE_ROOT 'storage\maintenance.flag') -ErrorAction Stop"
+if errorlevel 1 goto failed
 echo ACTUALIZACION COMPLETADA.
 git log -1 --format="%%h %%s"
 echo.
@@ -110,6 +130,8 @@ goto failed
 :failed
 echo.
 echo ACTUALIZACION NO COMPLETADA. Revisa el error mostrado arriba.
+echo Si se activo mantenimiento, el sitio y el worker permanecen pausados.
+echo Corrige el error y ejecuta nuevamente este actualizador para completar todos los pasos.
 popd
 pause
 exit /b 1
