@@ -192,6 +192,14 @@ php worker.php --limit=100
 
 Tambien se pueden procesar pendientes desde `queue.php` indicando un limite por tanda. El worker no requiere sucursal seleccionada: procesa pendientes de todas las sucursales y toma el SMTP o la configuracion de Meta correspondiente a cada item por su `branch_id`.
 
+## Actualizar produccion con doble clic
+
+Si la instalacion existente todavia no tiene Git inicializado, copiar `inicializar_produccion.cmd` a su carpeta y ejecutarlo una sola vez. Requiere Git instalado y acceso al repositorio de GitHub. Respalda todos los archivos en `%LOCALAPPDATA%\SendMails\backups`, conserva configuracion y claves privadas, sincroniza el codigo con `main` e instala los metadatos de Git con seguimiento de `origin/main`. Los archivos de codigo que difieran se reemplazan por la version del repositorio; quedan guardados en el respaldo. No modifica las bases de datos. Si Git reconoce un repositorio existente, se detiene para no reinicializarlo. Si hay una carpeta `.git` que Git rechaza con `not a git repository`, primero la incluye en el respaldo completo y luego la mueve a `git-invalido-original` dentro de ese respaldo, sin borrarla. No modifica archivos `.git` que apunten a worktrees ni intenta resolver errores de permisos automaticamente. Despues ejecutar el actualizador para instalar dependencias. El respaldo contiene credenciales y debe mantenerse privado.
+
+Colocar `actualizar_produccion.cmd` en la carpeta del proyecto de produccion y abrirlo con doble clic. Requiere un repositorio Git ya configurado en `main` con remoto `origin`, acceso a ese remoto y PHP disponible. Si Composer no esta en PATH, descarga una copia local en `storage/tools/composer.phar` desde getcomposer.org y verifica su SHA-256 oficial antes de ejecutarla. No requiere instalar Composer globalmente; la primera descarga necesita acceso a Internet. Usa PHP de `C:\xampp\php` si existe, o el disponible en PATH.
+
+El actualizador comprueba cambios locales, consulta el remoto y solo permite avanzar sin merges ni sobrescrituras forzadas. Conserva la clave de facturas de versiones antiguas en el archivo privado antes de actualizar, y ejecuta `composer install --no-dev`. Si la clave ya no esta en el codigo ni configurada localmente, hay que copiar `storage/invoice_crypto.key` desde el respaldo privado. La ventana permanece abierta mostrando el resultado. Las migraciones siguen ejecutandose mediante el mecanismo habitual de la aplicacion al acceder a ella.
+
 ## Tarea programada en Windows
 
 En produccion, desde PowerShell:
