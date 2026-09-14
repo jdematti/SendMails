@@ -4,6 +4,28 @@ Fecha de revisión: 2026-09-14. Referencia local para próximos cambios, basada 
 
 Actualización 2026-09-14: se implementaron adjuntos para plantillas de campañas email. Ver detalles en la sección Plantillas y correo. Las observaciones de la revisión inicial siguientes describen el estado anterior a ese cambio.
 
+## Estado actual: mejoras de agilidad (2026-09-14)
+
+Esta sección y MEJORAS_Y_DESPLIEGUE.md prevalecen sobre las observaciones históricas siguientes. Se implementaron los cambios en una copia de trabajo aislada porque la instalación habitual apunta a datos reales.
+
+- send.php e invoices.php son entradas del flujo compartido compose.php / assets/js/compose.js. Tres pasos, búsqueda SQL paginada de 50 filas, selección por IDs, revisión antes de confirmar y filtros recordados por usuario/sucursal. Ya admite campañas solo con emails manuales.
+- compose_api.php autentica y verifica CSRF, cierra el bloqueo de sesión antes del trabajo largo, y coordina ComposeService con DraftRepository. Los borradores son compartidos por sucursal, con revisiones y confirmación idempotente.
+- Las colas de ambos canales se crean en una transacción. BulkInsert limita cada INSERT a menos de 2100 parámetros. Se probó con 4000 destinatarios.
+- MessageSnapshot guarda una copia por campaña/lote, incluidos adjuntos y opciones de plantilla; pending aplica esa copia. La migración captura el contenido vigente de lotes queued/processing/paused. No reconstruye históricos terminados.
+- Schema::ensure solo comprueba una versión, una vez por petición. migrate.php ejecuta Schema::migrate y AgilityMigration en transacción con bloqueo de migración/worker. En actualizaciones no reasigna usuarios ni elimina plantillas mediante semillas.
+- Nueva tabla SendMail_Drafts. Campaigns, InvoiceBatches y WhatsAppBatches tienen message_snapshot; Queue e InvoiceQueue, is_test. Templates e InvoiceTemplates tienen content_revision para impedir publicaciones concurrentes.
+- TemplateDraft integra borradores compartidos en ambos editores, conserva archivos antes de preview, detecta cambios concurrentes y permite publicar como nueva plantilla. Los iframes de estos editores y del compositor tienen sandbox.
+- El modo test de InvoiceMailerService no marca FacturasTel como enviada. Un fallo después de aceptación SMTP deja el item para revisión en sending con explicación, sin reintento automático.
+- activity.php / ActivityRepository consolidan email y WhatsApp de campañas/facturas, con lotes, progreso, estados, errores y pausa/continuación. Inicio usa estas métricas. Las páginas administrativas previas siguen disponibles.
+- WorkerRuntime alterna sucursales activas y canales, persiste sus intervalos, mantiene heartbeat y un bloqueo exclusivo. Señala sending de una ejecución anterior para revisión. No hay procesamiento desde el navegador.
+- El actualizador Windows activa mantenimiento, deshabilita la tarea, verifica que terminó cualquier envío activo, respalda los archivos y conserva CMD no rastreados antes de hacer fast-forward. Ejecuta Composer, migración y registro del worker como SYSTEM cada minuto; libera mantenimiento al completar.
+- Pruebas: tests/run.ps1 crea y elimina una base temporal local SQLEXPRESS y almacenamiento temporal separado, sin leer la configuración real. Incluye migración, 4000 filas, snapshots, atomicidad de canales, conflictos, permisos de sucursal y modo test. Worker/transporte/tarea se simulan. tests/browser.cjs prueba los flujos reales de PHP/JS con esa base temporal en Edge. Documentación de ejecución y límites en MEJORAS_Y_DESPLIEGUE.md.
+- No se ejecutaron migraciones sobre datos reales ni envíos externos durante el desarrollo. La ejecución con credenciales/servicios y la cuenta SYSTEM de producción se comprueba al desplegar.
+
+## Observaciones históricas de la revisión inicial
+
+Los apartados que siguen documentan la versión anterior y conservan contexto de los módulos que no cambiaron. Los problemas ya corregidos se indican en el estado actual de arriba.
+
 ## Alcance y verificación
 
 - Aplicación PHP sin framework, con páginas que combinan controlador, HTML y JavaScript; clases estáticas en `app/` para datos y servicios.

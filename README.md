@@ -2,11 +2,14 @@
 
 Sistema PHP para administrar plantillas HTML, clientes desde SQL Server, campanas de correo, facturas y cola de envios por sucursal.
 
+Guia de los nuevos flujos, actualizacion y pruebas: [MEJORAS_Y_DESPLIEGUE.md](MEJORAS_Y_DESPLIEGUE.md).
+
 ## Requisitos
 
 - PHP 7.4 o superior.
 - Extension `pdo_sqlsrv` habilitada.
 - Composer.
+- SQL Server 2012 o posterior (paginacion OFFSET/FETCH).
 - Acceso a la base central `SendMails`.
 - Acceso a las bases operativas de cada sucursal. Para clientes se usa `dbo.v_sendmail_clientes` cuando existe; si no existe, se usa `dbo.clientes` con columnas compatibles.
 
@@ -15,11 +18,13 @@ Sistema PHP para administrar plantillas HTML, clientes desde SQL Server, campana
 1. Abrir `config_db.php`.
 2. Cargar servidor, base de datos central `SendMails`, usuario y contrasena.
 3. Usar `Probar conexion`.
-4. Usar `Guardar y crear tablas`.
-5. Ingresar con el usuario Admin inicial.
+4. Usar `Guardar conexion`.
+5. Ejecutar `php migrate.php` en la carpeta del sistema para inicializar la estructura.
+6. Ingresar con el usuario Admin inicial.
 
 La conexion central se guarda en `storage/db_config.json`. Esa conexion debe apuntar a `SendMails`, donde quedan las tablas propias del sistema:
 
+- `SendMail_Drafts`
 - `SendMail_Settings`
 - `SendMail_Branches`
 - `SendMail_UserBranches`
@@ -114,15 +119,17 @@ Si una plantilla de campana no incluye `{{url_baja}}` ni `{{unsubscribe_url}}`, 
 
 En `Plantillas > Campañas`, al crear o editar una plantilla, la sección `Archivos adjuntos` permite seleccionar hasta 5 archivos, con un máximo de 10 MB en total. Se pueden quitar archivos existentes marcando `Quitar` y guardando la plantilla. También se respetan los límites de carga de PHP.
 
-Los adjuntos se guardan junto con la plantilla en la base central y se copian al crear una plantilla desde otra. Se incluyen en cada email de campaña que use esa plantilla, tanto desde la cola web como desde el worker. Los cambios en los adjuntos también afectan los emails pendientes que usen la plantilla.
+Los adjuntos se guardan junto con la plantilla en la base central y se copian al crear una plantilla desde otra. Se incluyen en cada email de campaña procesado por el worker. Cada lote conserva su propia copia: editar los adjuntos de la plantilla no altera los envíos pendientes ya confirmados.
 
-`Enviar prueba` incluye los archivos guardados y los nuevos seleccionados, descontando los marcados para quitar, sin guardar los cambios. Después de una prueba o un error hay que volver a seleccionar los archivos nuevos antes de guardar. Estos adjuntos corresponden al canal email.
+`Enviar prueba` guarda primero el borrador compartido con los archivos nuevos y las bajas seleccionadas. Así se conservan los adjuntos al volver al editor, sin publicar la plantilla. Estos adjuntos corresponden al canal email.
 
-El esquema agrega automáticamente la columna nullable `SendMail_Templates.attachments_json`; las plantillas existentes siguen funcionando sin adjuntos. Para comprobar validación y composición MIME sin enviar correos ni conectar a la base: `php tests/campaign_attachments_test.php`.
+La migración por consola incorpora la columna nullable `SendMail_Templates.attachments_json` cuando falta; las plantillas existentes siguen funcionando sin adjuntos. Para comprobar validación y composición MIME sin enviar correos ni conectar a la base: `php tests/campaign_attachments_test.php`.
 
 Desde `send.php` se crea una campana:
 
-- El panel derecho define los destinatarios reales.
+- La seleccion se conserva al paginar. Se puede seleccionar la pagina o todos los resultados.
+- Guardar borrador permite a otro usuario de la sucursal continuar la preparacion.
+- La revision muestra destinatarios validos, exclusiones, duplicados, mensaje y adjuntos antes de confirmar.
 - No se encolan clientes que ya cancelaron la suscripcion.
 - Solo se encolan clientes con email valido.
 
@@ -134,7 +141,7 @@ Los correos de campana incluyen un link a `unsubscribe.php` firmado por token. L
 
 Cuando un destinatario cancela la suscripcion:
 
-- deja de aparecer en la preparacion de nuevas campanas;
+- queda excluido al revisar y confirmar nuevas campanas;
 - si ya estaba pendiente en la cola, el envio se marca como `skipped`;
 - la baja se aplica por email normalizado dentro de la sucursal del envio.
 
@@ -158,9 +165,11 @@ La plantilla de facturas se edita desde el boton `Plantilla` del modulo Facturas
 - `{{instagram}}`
 - `{{whatsapp}}`
 
-La plantilla de facturas y el SMTP usado son los de la sucursal activa. El remitente, reply-to, BCC, dominio web, prefijo de localidad y modo test se configuran en la plantilla de facturas. Cuando un envio finaliza correctamente se actualiza `FacturasTel.mail_enviado` y `FacturasTel.fecha_mail_enviado` en la base operativa de esa sucursal.
+La plantilla de facturas y el SMTP usado son los de la sucursal activa. El remitente, reply-to, BCC, dominio web, prefijo de localidad y modo test se configuran en la plantilla de facturas. Cuando un envio real finaliza correctamente se actualiza `FacturasTel.mail_enviado` y `FacturasTel.fecha_mail_enviado` en la base operativa de esa sucursal.
 
 La clave compatible con el sistema externo de facturas se configura mediante la variable de entorno `INVOICE_CRYPTO_KEY` o el archivo local `storage/invoice_crypto.key`. Debe ser la misma clave que utiliza el sistema que abre los enlaces; no generar una nueva al instalar. Este archivo, `storage/db_config.json` y `storage/branch_secret.key` quedan excluidos de Git y deben conservarse en el respaldo privado de la instalacion. En una instalacion nueva, ejecutar `composer install` para obtener las dependencias de `composer.lock`.
+
+El modo test de email no marca facturas reales como enviadas.
 
 ## WhatsApp Business Platform
 
@@ -190,7 +199,7 @@ Para procesar pendientes de campanas y facturas, tanto por email como por WhatsA
 php worker.php --limit=100
 ```
 
-Tambien se pueden procesar pendientes desde `queue.php` indicando un limite por tanda. El worker no requiere sucursal seleccionada: procesa pendientes de todas las sucursales y toma el SMTP o la configuracion de Meta correspondiente a cada item por su `branch_id`.
+El seguimiento se consulta en `activity.php`; `queue.php` redirige alli. El worker procesa las sucursales activas alternando canales, toma el SMTP o Meta correspondiente a cada `branch_id` y conserva los intervalos entre ejecuciones. No requiere navegador ni sesion de Windows. Los endpoints antiguos de procesamiento web informan que el envio ahora es automatico.
 
 ## Actualizar produccion con doble clic
 
@@ -198,7 +207,7 @@ Si la instalacion existente todavia no tiene Git inicializado, copiar `inicializ
 
 Colocar `actualizar_produccion.cmd` en la carpeta del proyecto de produccion y abrirlo con doble clic. Requiere un repositorio Git ya configurado en `main` con remoto `origin`, acceso a ese remoto y PHP disponible. Si Composer no esta en PATH, descarga una copia local en `storage/tools/composer.phar` desde getcomposer.org y verifica su SHA-256 oficial antes de ejecutarla. No requiere instalar Composer globalmente; la primera descarga necesita acceso a Internet. Usa PHP de `C:\xampp\php` si existe, o el disponible en PATH.
 
-El actualizador comprueba cambios locales, consulta el remoto y solo permite avanzar sin merges ni sobrescrituras forzadas. Conserva la clave de facturas de versiones antiguas en el archivo privado antes de actualizar, y ejecuta `composer install --no-dev`. Si la clave ya no esta en el codigo ni configurada localmente, hay que copiar `storage/invoice_crypto.key` desde el respaldo privado. La ventana permanece abierta mostrando el resultado. Las migraciones siguen ejecutandose mediante el mecanismo habitual de la aplicacion al acceder a ella.
+El actualizador comprueba cambios locales, consulta el remoto y solo permite avanzar sin merges ni sobrescrituras forzadas. Conserva la clave de facturas de versiones antiguas en el archivo privado antes de actualizar, y ejecuta `composer install --no-dev`. Si la clave ya no esta en el codigo ni configurada localmente, hay que copiar `storage/invoice_crypto.key` desde el respaldo privado. La ventana permanece abierta mostrando el resultado. Las migraciones se ejecutan explicitamente con `php migrate.php`, incluidas en la nueva version del CMD. La aplicacion no ejecuta DDL al navegar. El actualizador solicita elevacion, activa mantenimiento, respalda archivos, espera a que no haya un worker activo y configura la tarea como SYSTEM cada minuto. Si falla, permanece en mantenimiento hasta completar los pasos. Para esta primera actualizacion hay que copiar el nuevo CMD antes de ejecutarlo; ver la guia enlazada al inicio.
 
 ## Tarea programada en Windows
 
@@ -206,10 +215,10 @@ En produccion, desde PowerShell:
 
 ```powershell
 cd C:\xampp\htdocs\SendMails
-powershell -ExecutionPolicy Bypass -File .\install_scheduled_task.ps1 -IntervalMinutes 15 -Limit 1000
+powershell -ExecutionPolicy Bypass -File .\install_scheduled_task.ps1 -IntervalMinutes 1 -Limit 1000
 ```
 
-La tarea ejecuta `run_worker.ps1`, que llama a `worker.php`, escribe logs en `storage\logs` y usa un bloqueo para evitar dos corridas simultaneas.
+La tarea se registra con permisos administrativos bajo SYSTEM y funciona sin sesion iniciada. Ejecuta `run_worker.ps1`, que llama a `worker.php` durante un maximo aproximado de 55 segundos por corrida (termina el envio en curso), escribe logs en `storage\logs` y evita corridas simultaneas. El estado reciente se guarda en `storage/worker-status.json` y se muestra en Inicio y Seguimiento.
 
 Para ejecutar una corrida manual:
 
