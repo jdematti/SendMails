@@ -10,6 +10,7 @@ Alcance acordado: 3–4 sucursales, 3–4 usuarios, aproximadamente 4.000 client
 - Se puede crear una campaña exclusivamente con emails manuales.
 - Guardar borrador permite continuar desde otra cuenta de la misma sucursal. Las revisiones impiden sobrescribir silenciosamente una edición concurrente.
 - Las plantillas tienen borrador y publicación separados. Sus archivos se conservan antes de una prueba. Un conflicto con la versión publicada permite publicar como plantilla nueva.
+- En las plantillas de campañas, cada adjunto tiene un botón `Vista previa`: imágenes, PDF y texto se muestran en un modal, con descarga del archivo original. Los formatos sin visor se pueden descargar. Funciona antes de guardar y en borradores o plantillas publicadas. Los archivos locales no se suben al abrir la vista previa; los guardados se consultan a demanda dentro de la sucursal actual. Quitar un adjunto lo marca como excluido hasta guardar.
 - El inicio y el seguimiento incluyen campañas, facturas, email y WhatsApp. Cada lote permite consultar progreso, destinatarios, errores, pausa y continuación. Se mantienen las páginas administrativas anteriores para sus operaciones existentes.
 - Las tablas tienen un área de desplazamiento y encabezados fijos. El diseño conserva el menú, colores y controles habituales.
 - Los accesos «Ver campañas» y «Ver facturas» abren el seguimiento filtrado. Las páginas administrativas anteriores siguen disponibles desde el seguimiento.

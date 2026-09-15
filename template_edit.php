@@ -278,17 +278,26 @@ require __DIR__ . '/app/layout/header.php';
                     </div>
                 </div>
             </div>
-            <div class="field full">
+            <div class="field full" id="campaignAttachments">
                 <label for="attachments">Archivos adjuntos</label>
                 <p class="hint">Se adjuntan a cada email de campaña que use esta plantilla. Hasta 5 archivos y 10 MB en total. Limite del servidor por archivo: <?= e((string) ini_get('upload_max_filesize')) ?>.</p>
                 <?php foreach ($attachments as $attachmentIndex => $attachment): ?>
-                    <label class="hint">
-                        <input type="checkbox" name="remove_attachments[]" value="<?= $attachmentIndex ?>" data-attachment-size="<?= (int) $attachment['size'] ?>"<?= checked(in_array((string) $attachmentIndex, $removeAttachments, true)) ?>>
-                        Quitar <?= e($attachment['name']) ?> (<?= e(number_format($attachment['size'] / 1024, 1, ',', '.')) ?> KB)
-                    </label>
+                    <?php $attachmentUrl = 'attachment_preview.php?' . http_build_query([
+                        'branch_id'=>(int) BranchRepository::currentId(), 'draft_id'=>(int) ($draftContext['id'] ?? 0),
+                        'template_id'=>$id ?: $sourceId, 'index'=>$attachmentIndex,
+                        'fingerprint'=>hash('sha256', $attachment['name'] . "\0" . $attachment['content']),
+                    ]); ?>
+                    <div class="attachment-row" data-saved-attachment>
+                        <div class="attachment-meta"><strong><?= e($attachment['name']) ?></strong><span class="hint"><?= e(number_format($attachment['size'] / 1024, 1, ',', '.')) ?> KB · <span data-attachment-state>Incluido</span></span></div>
+                        <div class="attachment-actions">
+                            <button type="button" class="btn secondary small" data-preview-attachment data-url="<?= e($attachmentUrl) ?>" data-name="<?= e($attachment['name']) ?>">Vista previa</button>
+                            <label class="hint"><input type="checkbox" name="remove_attachments[]" value="<?= $attachmentIndex ?>" data-attachment-size="<?= (int) $attachment['size'] ?>"<?= checked(in_array((string) $attachmentIndex, $removeAttachments, true)) ?>> Quitar al guardar</label>
+                        </div>
+                    </div>
                 <?php endforeach; ?>
                 <input id="attachments" name="attachments[]" type="file" multiple>
-                <p class="hint">Los cambios se aplican al guardar. Enviar prueba incluye los adjuntos seleccionados sin guardar la plantilla. Los cambios tambien afectan los emails pendientes que usen esta plantilla.</p>
+                <div id="selectedAttachments" aria-live="polite"></div>
+                <p class="hint">Podés revisar los archivos antes de guardar. Enviar prueba incluye los adjuntos seleccionados. Publicar aplica los cambios a las campañas nuevas; los envíos ya confirmados conservan sus adjuntos.</p>
             </div>
             <div class="field full advanced-html-field">
                 <details class="advanced-html-editor">
@@ -335,6 +344,15 @@ require __DIR__ . '/app/layout/header.php';
         ])) ?>"></iframe>
     </div>
 </section>
+
+<dialog id="attachmentDialog" class="attachment-dialog" aria-labelledby="attachmentTitle">
+    <div class="attachment-dialog-head"><h2 id="attachmentTitle">Vista previa del adjunto</h2><button type="button" class="btn secondary" id="closeAttachmentPreview">Cerrar</button></div>
+    <p id="attachmentName" class="attachment-filename"></p>
+    <p id="attachmentPreviewStatus" role="status"></p>
+    <div id="attachmentPreviewContent"></div>
+    <div class="actions"><a id="downloadAttachment" class="btn secondary" hidden>Descargar archivo</a></div>
+</dialog>
+<script src="assets/js/attachment-preview.js" defer></script>
 
 <script>
 (() => {

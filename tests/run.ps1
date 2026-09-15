@@ -34,6 +34,8 @@ try {
         if ($server.HasExited) { throw 'No se pudo iniciar el servidor de pruebas.' }
         & node (Join-Path $PSScriptRoot 'browser.cjs')
         if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba del navegador.' }
+        & node (Join-Path $PSScriptRoot 'browser_attachments.cjs')
+        if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba de vista previa de adjuntos.' }
         & node (Join-Path $PSScriptRoot 'browser_purge_errors.cjs')
         if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba de errores de purga.' }
         & node (Join-Path $PSScriptRoot 'browser_operations.cjs')
