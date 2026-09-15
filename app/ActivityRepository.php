@@ -45,11 +45,18 @@ final class ActivityRepository
     public static function page(array $filters, int $page = 1): array
     {
         [$where, $params] = self::where($filters);
-        $offset = (max(1, $page) - 1) * 50;
-        $stmt = Database::pdo()->prepare(self::source() . "SELECT *, COUNT(*) OVER() AS result_total FROM activity
-            WHERE $where ORDER BY created_at DESC, id DESC, kind, channel OFFSET $offset ROWS FETCH NEXT 50 ROWS ONLY");
+        $params[':page_start'] = (max(1, $page) - 1) * 50;
+        $params[':page_end'] = $params[':page_start'] + 50;
+        $stmt = Database::pdo()->prepare(self::source() . ", numbered_activity AS (
+            SELECT *, COUNT(*) OVER() AS result_total,
+                ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC, kind, channel) AS page_row_number
+            FROM activity WHERE $where)
+            SELECT * FROM numbered_activity WHERE page_row_number > :page_start AND page_row_number <= :page_end
+            ORDER BY page_row_number");
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) unset($row['page_row_number']);
+        unset($row);
         return ['rows' => $rows, 'total' => (int) ($rows[0]['result_total'] ?? 0)];
     }
 

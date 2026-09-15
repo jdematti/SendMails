@@ -38,7 +38,7 @@ La migración fija el contenido actual de los lotes en cola, en proceso o pausad
 
 Si algo falla, mantenimiento y la tarea permanecen pausados. Corregir el error indicado y volver a ejecutar el mismo CMD. No retirar manualmente mantenimiento para saltear una migración fallida. La carpeta del respaldo se muestra en la consola y contiene información privada.
 
-La actualización no necesita nuevas dependencias de producción. Requiere SQL Server con soporte de paginación OFFSET/FETCH (2012 o posterior) y los módulos PHP que ya utiliza el proyecto.
+La actualización no necesita nuevas dependencias de producción. La paginación de clientes, facturas y seguimiento utiliza ROW_NUMBER para evitar la dependencia de OFFSET/FETCH en los servidores de origen. Se conservan los módulos PHP que ya utiliza el proyecto.
 
 ## Verificación reproducible
 

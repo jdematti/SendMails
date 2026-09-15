@@ -86,13 +86,23 @@ final class ClientRepository
             }
             $where[] = 'plan_contratado IN (' . implode(',', $keys) . ')';
         }
-        $sql .= ($idsOnly ? 'SELECT oid' : 'SELECT *, COUNT(*) OVER() AS result_total') .
-            ' FROM clients WHERE ' . implode(' AND ', $where) . ' ORDER BY razon_social, codigo_cliente, oid';
-        if (!$idsOnly) $sql .= ' OFFSET ' . ((max(1, $page) - 1) * 50) . ' ROWS FETCH NEXT 50 ROWS ONLY';
+        $criteria = ' FROM clients WHERE ' . implode(' AND ', $where);
+        if ($idsOnly) {
+            $sql .= 'SELECT oid' . $criteria . ' ORDER BY razon_social, codigo_cliente, oid';
+        } else {
+            $params[':page_start'] = (max(1, $page) - 1) * 50;
+            $params[':page_end'] = $params[':page_start'] + 50;
+            $sql .= ', numbered_clients AS (SELECT *, COUNT(*) OVER() AS result_total,
+                ROW_NUMBER() OVER (ORDER BY razon_social, codigo_cliente, oid) AS page_row_number' . $criteria . ')
+                SELECT * FROM numbered_clients WHERE page_row_number > :page_start AND page_row_number <= :page_end
+                ORDER BY page_row_number';
+        }
         $stmt = self::pdo()->prepare($sql);
         $stmt->execute($params);
         if ($idsOnly) return $stmt->fetchAll(PDO::FETCH_COLUMN);
         $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) unset($row['page_row_number']);
+        unset($row);
         return ['rows' => $rows, 'total' => (int) ($rows[0]['result_total'] ?? 0), 'page' => max(1, $page), 'size' => 50];
     }
 

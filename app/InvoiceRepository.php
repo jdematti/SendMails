@@ -115,14 +115,11 @@ final class InvoiceRepository
         $channel = self::normalizeDeliveryChannel($channel);
         $phoneExpression = self::invoicePhoneExpression();
         $criteria = self::invoiceSearchCriteria($dueDate, $status, $includeSent, $filters, $channel, $phoneExpression);
-        $top = '';
-        if ($limit > 0) {
-            $limit = max(20, min($limit, 10000));
-            $top = "";
-        }
+        if ($limit > 0) $limit = max(20, min($limit, 10000));
+        $numbering = $limit > 0 ? ', ROW_NUMBER() OVER (ORDER BY F.SNB, F.Id) AS page_row_number' : '';
 
         $branchId = (int) (BranchRepository::currentId() ?? 0);
-        $sql = "SELECT $top
+        $sql = "SELECT
                     CAST($branchId AS int) AS branch_id,
                     LOWER(LTRIM(RTRIM(C.DirEMail))) COLLATE Modern_Spanish_CI_AS AS email,
                     NULLIF($phoneExpression, '') AS telefono_movil,
@@ -135,17 +132,25 @@ final class InvoiceRepository
                     F.Estado AS status,
                     ISNULL(F.mail_enviado, 0) AS mail_sent,
                     CASE WHEN F.fecha_mail_Enviado IS NULL THEN '' ELSE CONVERT(varchar(10), F.fecha_mail_Enviado, 103) END AS sent_label
+                    $numbering
                 FROM FacturasTel F
                 INNER JOIN clientes C ON C.OId COLLATE Modern_Spanish_CI_AS = F.IdCliente
-                WHERE " . implode(' AND ', $criteria['where']) . '
-                ORDER BY F.SNB, F.Id';
-        if ($limit > 0) $sql .= ' OFFSET ' . ((max(1, $page) - 1) * $limit) . ' ROWS FETCH NEXT ' . $limit . ' ROWS ONLY';
+                WHERE " . implode(' AND ', $criteria['where']);
+        if ($limit > 0) {
+            $criteria['params'][':page_start'] = (max(1, $page) - 1) * $limit;
+            $criteria['params'][':page_end'] = $criteria['params'][':page_start'] + $limit;
+            $sql = 'WITH numbered_invoices AS (' . $sql . ') SELECT * FROM numbered_invoices
+                WHERE page_row_number > :page_start AND page_row_number <= :page_end ORDER BY page_row_number';
+        } else {
+            $sql .= ' ORDER BY F.SNB, F.Id';
+        }
 
         $stmt = self::sourcePdo()->prepare($sql);
         $stmt->execute($criteria['params']);
         $rows = [];
         $index = 0;
         while ($row = $stmt->fetch()) {
+            unset($row['page_row_number']);
             $row = self::normalizeInvoiceRow($row, $template);
             $hasEmail = filter_var((string) $row['email'], FILTER_VALIDATE_EMAIL) !== false;
             $hasPhone = trim((string) ($row['telefono_movil'] ?? '')) !== '';

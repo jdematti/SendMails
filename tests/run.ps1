@@ -17,6 +17,7 @@ try {
     $env:SENDMAILS_TEST_DATABASE=$testName
     Run-Php 'campaign_attachments_test.php'
     Run-Php 'integration.php'
+    Run-Php 'pagination.php'
     Run-Php 'edge_cases.php'
     Run-Php 'management_lists.php'
     Run-Php 'worker_dispatch.php'

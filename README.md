@@ -9,7 +9,7 @@ Guia de los nuevos flujos, actualizacion y pruebas: [MEJORAS_Y_DESPLIEGUE.md](ME
 - PHP 7.4 o superior.
 - Extension `pdo_sqlsrv` habilitada.
 - Composer.
-- SQL Server 2012 o posterior (paginacion OFFSET/FETCH).
+- SQL Server para la base central y las bases de origen. La paginacion usa ROW_NUMBER, sin depender de OFFSET/FETCH.
 - Acceso a la base central `SendMails`.
 - Acceso a las bases operativas de cada sucursal. Para clientes se usa `dbo.v_sendmail_clientes` cuando existe; si no existe, se usa `dbo.clientes` con columnas compatibles.
 
