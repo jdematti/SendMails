@@ -56,19 +56,23 @@ final class WhatsAppRepository
         $pdo = Database::pdo();
         $stmt = $pdo->prepare(
             "MERGE dbo.SendMail_WhatsAppTemplates AS target
-             USING (SELECT :branch_id AS branch_id, :meta_template_id AS meta_template_id) AS source
+             USING (SELECT :branch_id AS branch_id, :meta_template_id AS meta_template_id,
+                           :name AS name, :language AS language, :category AS category,
+                           :status AS status, :components_json AS components_json,
+                           :body_variables_json AS body_variables_json) AS source
              ON target.branch_id = source.branch_id AND target.meta_template_id = source.meta_template_id
              WHEN MATCHED THEN UPDATE SET
-                name = :name,
-                language = :language,
-                category = :category,
-                status = :status,
-                components_json = :components_json,
+                name = source.name,
+                language = source.language,
+                category = source.category,
+                status = source.status,
+                components_json = source.components_json,
                 synced_at = SYSDATETIME(),
                 updated_at = SYSDATETIME()
              WHEN NOT MATCHED THEN INSERT
                 (branch_id, meta_template_id, name, language, category, status, components_json, body_variables_json, is_active)
-                VALUES (:branch_id, :meta_template_id, :name, :language, :category, :status, :components_json, :body_variables_json, 1);"
+                VALUES (source.branch_id, source.meta_template_id, source.name, source.language, source.category,
+                        source.status, source.components_json, source.body_variables_json, 1);"
         );
 
         $count = 0;
@@ -479,7 +483,7 @@ final class WhatsAppRepository
     {
         $hash = hash('sha256', $providerMessageId . '|' . $status . '|' . ($eventAt ? $eventAt->format(DATE_ATOM) : '') . '|' . $payload);
         $stmt = Database::pdo()->prepare(
-            'IF NOT EXISTS (SELECT 1 FROM dbo.SendMail_WhatsAppEvents WHERE event_hash = :event_hash)
+            'IF NOT EXISTS (SELECT 1 FROM dbo.SendMail_WhatsAppEvents WHERE event_hash = :existing_hash)
              BEGIN
                 INSERT INTO dbo.SendMail_WhatsAppEvents
                 (branch_id, provider_message_id, event_status, event_at, event_hash, payload_json)
@@ -492,6 +496,7 @@ final class WhatsAppRepository
             ':event_status' => $status,
             ':event_at' => $eventAt ? $eventAt->format('Y-m-d H:i:s') : '',
             ':event_hash' => $hash,
+            ':existing_hash' => $hash,
             ':payload_json' => $payload,
         ]);
         return $stmt->rowCount() > 0;
@@ -501,10 +506,11 @@ final class WhatsAppRepository
     {
         $stmt = Database::pdo()->prepare(
             'MERGE dbo.SendMail_WhatsAppOptOuts AS target
-             USING (SELECT :branch_id branch_id, :phone_to phone_to, :scope scope) AS source
+             USING (SELECT :branch_id branch_id, :phone_to phone_to, :scope scope, :reason reason) AS source
              ON target.branch_id = source.branch_id AND target.phone_to = source.phone_to AND target.scope = source.scope
-             WHEN MATCHED THEN UPDATE SET reason = :reason, created_at = SYSDATETIME()
-             WHEN NOT MATCHED THEN INSERT (branch_id, phone_to, scope, reason) VALUES (:branch_id, :phone_to, :scope, :reason);'
+             WHEN MATCHED THEN UPDATE SET reason = source.reason, created_at = SYSDATETIME()
+             WHEN NOT MATCHED THEN INSERT (branch_id, phone_to, scope, reason)
+                VALUES (source.branch_id, source.phone_to, source.scope, source.reason);'
         );
         $stmt->execute([':branch_id' => $branchId, ':phone_to' => $phone, ':scope' => $scope, ':reason' => $reason]);
         $skip = Database::pdo()->prepare(

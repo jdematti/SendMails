@@ -61,7 +61,7 @@ require __DIR__ . '/app/layout/header.php';
 <?php else: ?>
     <section class="card">
         <form method="get" class="toolbar" data-wait-form>
-            <div class="field" style="min-width:320px;">
+            <div class="field client-search-field">
                 <label for="q">Buscar</label>
                 <input id="q" name="q" value="<?= e($term) ?>" placeholder="Razon social, codigo, email o ID">
             </div>

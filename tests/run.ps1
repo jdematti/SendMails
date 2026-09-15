@@ -1,12 +1,14 @@
-param([switch]$Browser)
+param([switch]$Browser, [switch]$Smoke)
+$Browser = $Browser -or $Smoke
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 $testName='SendMails_Agility_Test_'+[guid]::NewGuid().ToString('N').Substring(0,12)
 $server=$null
 $created=$false
 $previousDatabase=$env:SENDMAILS_TEST_DATABASE
+$noTransport='mail,fsockopen,pfsockopen,stream_socket_client,curl_exec,exec,shell_exec,system,passthru,proc_open,popen'
 function Run-Php([string]$File) {
-    & php (Join-Path $PSScriptRoot $File)
+    & php -d ('disable_functions='+$noTransport) (Join-Path $PSScriptRoot $File)
     if ($LASTEXITCODE -ne 0) { throw ('Fallo: '+$File) }
 }
 Push-Location $project
@@ -20,6 +22,7 @@ try {
     Run-Php 'pagination.php'
     Run-Php 'edge_cases.php'
     Run-Php 'management_lists.php'
+    Run-Php 'whatsapp_events.php'
     Run-Php 'worker_dispatch.php'
     Run-Php 'purge.php'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'deploy.ps1')
@@ -29,7 +32,7 @@ try {
     if ($Browser) {
         $log=Join-Path $env:TEMP ($testName+'-http')
         $phpExe=(Get-Command php).Source
-        $server=Start-Process -FilePath $phpExe -ArgumentList @('-S','127.0.0.1:8765','tests/fixture_router.php') -WorkingDirectory $project -WindowStyle Hidden -RedirectStandardOutput ($log+'.out') -RedirectStandardError ($log+'.err') -PassThru
+        $server=Start-Process -FilePath $phpExe -ArgumentList @('-d',('disable_functions='+$noTransport),'-S','127.0.0.1:8765','tests/fixture_router.php') -WorkingDirectory $project -WindowStyle Hidden -RedirectStandardOutput ($log+'.out') -RedirectStandardError ($log+'.err') -PassThru
         Start-Sleep -Milliseconds 500
         if ($server.HasExited) { throw 'No se pudo iniciar el servidor de pruebas.' }
         & node (Join-Path $PSScriptRoot 'browser.cjs')
@@ -40,6 +43,19 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba de errores de purga.' }
         & node (Join-Path $PSScriptRoot 'browser_operations.cjs')
         if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba de control y purga.' }
+        if ($Smoke) {
+            Stop-Process -Id $server.Id -Force
+            Run-Php 'smoke_setup.php'
+            $server=Start-Process -FilePath $phpExe -ArgumentList @('-d',('disable_functions='+$noTransport),'-S','127.0.0.1:8765','tests/smoke_router.php') -WorkingDirectory $project -WindowStyle Hidden -RedirectStandardOutput ($log+'-smoke.out') -RedirectStandardError ($log+'-smoke.err') -PassThru
+            Start-Sleep -Milliseconds 500
+            if ($server.HasExited) { throw 'No se pudo iniciar el servidor de smoke test.' }
+            & node (Join-Path $PSScriptRoot 'browser_smoke.cjs')
+            if ($LASTEXITCODE -ne 0) { throw 'Fallo el smoke test completo.' }
+            if (Select-String -LiteralPath ($log+'-smoke.err') -Pattern 'PHP (Warning|Fatal|Parse|Deprecated|Notice)' -Quiet) {
+                throw ('PHP registro errores durante el smoke test: '+$log+'-smoke.err')
+            }
+            Write-Output 'SMOKE PHP LOG OK: sin warnings, errores fatales ni avisos de PHP.'
+        }
     }
     Write-Output 'TODAS LAS PRUEBAS OK. Solo datos ficticios; sin transportes externos ni tareas reales.'
 } finally {

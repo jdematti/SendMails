@@ -642,6 +642,8 @@ form { margin: 0; }
 
 .field.full { grid-column: 1 / -1; }
 
+.client-search-field { flex: 1 1 320px; max-width: 100%; }
+
 .checkbox-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

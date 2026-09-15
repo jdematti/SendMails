@@ -43,9 +43,12 @@ final class Database
 }
 foreach (glob(__DIR__ . '/../app/*.php') as $file) {
     if (in_array(basename($file), ['bootstrap.php','config.php','helpers.php','Database.php'], true)) continue;
+    if (class_exists(pathinfo($file, PATHINFO_FILENAME), false)) continue; // Explicit test doubles only.
     require_once $file;
 }
 if (PHP_SAPI !== 'cli') session_start();
-$_SESSION['auth_user_id'] = $_SESSION['auth_user_id'] ?? 1;
-$_SESSION['branch_id'] = $_SESSION['branch_id'] ?? 1;
-$_SESSION['auth_last_activity'] = time();
+if (!defined('SENDMAILS_TEST_REAL_AUTH')) {
+    $_SESSION['auth_user_id'] = $_SESSION['auth_user_id'] ?? 1;
+    $_SESSION['branch_id'] = $_SESSION['branch_id'] ?? 1;
+    $_SESSION['auth_last_activity'] = time();
+}

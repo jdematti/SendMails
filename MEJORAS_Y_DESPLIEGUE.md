@@ -67,6 +67,12 @@ Para incluir navegador, disponer de Node, Playwright y Microsoft Edge:
 
     powershell -NoProfile -ExecutionPolicy Bypass -File tests/run.ps1 -Browser
 
+Para sumar el smoke test de pantallas públicas y administrativas, login real, recuperación de contraseña con token local, alta de usuario, permisos, baja de email y recepción de eventos WhatsApp ficticios:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File tests/run.ps1 -Smoke
+
+`-Smoke` incluye las pruebas de `-Browser`. El ejecutor deshabilita las funciones de transporte de PHP para correo y HTTP; el servidor local también rechaza los botones de envío de prueba y sincronización. El navegador del smoke bloquea recursos externos. Los datos y las contraseñas son ficticios, los tokens se generan localmente y no se envían. El resultado por comprobación queda en `smoke-results.json`, junto con las capturas. Las pruebas SQL de WhatsApp simulan únicamente la respuesta de Meta y verifican altas, actualizaciones, bajas, eventos repetidos y estados fuera de orden sobre la base temporal.
+
 Si Playwright no está en los módulos habituales de Node, `SENDMAILS_PLAYWRIGHT` acepta la ruta del paquete. Las capturas se guardan en el directorio temporal `sendmails-ui-artifacts`, o en `SENDMAILS_ARTIFACT_DIR`.
 
 Cobertura: migración nueva y actualización, idempotencia, 4.000 destinatarios, filtros y paginación, confirmación repetida, rollback entre canales, aislamiento de sucursales, conflictos de borradores, snapshots, adjuntos, modo test, seguimiento, bloqueo y alternancia del worker, intervalos persistidos, respaldo y recuperación de scripts no rastreados. Los transportes y las tareas programadas están simulados; no se envía email ni WhatsApp externo.
