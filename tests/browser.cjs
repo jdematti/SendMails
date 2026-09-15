@@ -9,6 +9,19 @@ fs.mkdirSync(artifactDir, {recursive:true});
     const page = await browser.newPage({viewport: {width: 1440, height: 1050}});
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    for (const url of ['campaigns.php', 'invoice_sends.php']) {
+        const response = await page.goto('http://127.0.0.1:8765/' + url);
+        assert.equal(response.status(), 200, url);
+        assert.equal(await page.locator('.alert.error').count(), 0, url + ': error en el listado');
+        assert.doesNotMatch(await page.locator('body').innerText(), /SQLSTATE|Fatal error/);
+        assert.ok(await page.locator('h1').isVisible(), url + ': titulo visible');
+    }
+    console.log('MANAGEMENT BROWSER OK: campañas y facturas cargan sin errores SQL.');
+    if (process.argv.includes('--management-only')) {
+        assert.deepEqual(errors, []);
+        await browser.close();
+        return;
+    }
     await page.goto('http://127.0.0.1:8765/send.php');
     await page.waitForFunction(() => document.getElementById('pageInfo')?.textContent.includes('4.000'));
     await page.waitForFunction(() => !document.getElementById('composeForm').hasAttribute('aria-busy'));

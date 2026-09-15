@@ -18,6 +18,7 @@ try {
     Run-Php 'campaign_attachments_test.php'
     Run-Php 'integration.php'
     Run-Php 'edge_cases.php'
+    Run-Php 'management_lists.php'
     Run-Php 'worker_dispatch.php'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'deploy.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba de despliegue.' }

@@ -568,7 +568,9 @@ final class WhatsAppRepository
             $params += $branchParams;
         }
         $stmt = Database::pdo()->prepare(
-            "SELECT TOP $limit b.*, t.name AS template_name, t.language,
+            "SELECT TOP $limit b.id, b.branch_id, b.source_type, b.template_id, b.name, b.status,
+                    b.total_queued, b.total_sent, b.total_failed, b.total_delivered, b.total_read,
+                    b.created_at, b.started_at, b.completed_at, t.name AS template_name, t.language,
                     MIN(q.scheduled_at) AS first_scheduled_at,
                     MAX(q.scheduled_at) AS last_scheduled_at,
                     SUM(CASE WHEN q.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
