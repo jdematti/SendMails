@@ -14,11 +14,11 @@ $templateItems = [
 ];
 $campaignItems = [
     ['href' => 'send.php', 'label' => 'Crear Campaña', 'pages' => ['send.php']],
-    ['href' => 'activity.php?kind=campaign', 'label' => 'Gestion Campañas', 'pages' => ['campaigns.php']],
+    ['href' => 'activity.php?kind=campaign', 'label' => 'Ver campañas', 'pages' => ['campaigns.php'], 'kind'=>'campaign'],
 ];
 $invoiceItems = [
     ['href' => 'invoices.php', 'label' => 'Preparar Facturas', 'pages' => ['invoices.php']],
-    ['href' => 'activity.php?kind=invoice', 'label' => 'Gestion Facturas', 'pages' => ['invoice_sends.php']],
+    ['href' => 'activity.php?kind=invoice', 'label' => 'Ver facturas', 'pages' => ['invoice_sends.php'], 'kind'=>'invoice'],
 ];
 $configItems = [
     'users.php' => 'Usuarios',
@@ -26,11 +26,13 @@ $configItems = [
     'smtp.php' => 'SMTP',
     'whatsapp.php' => 'WhatsApp / Meta',
     'config_db.php' => 'Base de datos',
+    'purge.php' => 'Purgar historial',
 ];
 $tailNavItems = [
     'activity.php' => 'Seguimiento de envíos',
 ];
 $isSubItemActive = static function (array $item) use ($currentPage): bool {
+    if ($currentPage === 'activity.php' && isset($item['kind'])) return query_string('kind') === $item['kind'];
     if ($currentPage === 'queue.php' && isset($item['type'])) {
         $queueType = query_string('type');
         if ($queueType === '') {
@@ -84,7 +86,7 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
         </div>
         <nav class="nav" id="mainNav">
             <?php foreach ($navItems as $href => $label): ?>
-                <a href="<?= e($href) ?>" class="<?= $currentPage === $href ? 'active' : '' ?>" data-wait><?= e($label) ?></a>
+                <a href="<?= e($href) ?>" class="<?= $currentPage === $href && ($href !== 'activity.php' || query_string('kind') === '') ? 'active' : '' ?>" data-wait><?= e($label) ?></a>
             <?php endforeach; ?>
 
             <div class="nav-group <?= $isTemplatesActive ? 'open active' : '' ?>" data-nav-group>
@@ -121,7 +123,7 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
             </div>
 
             <?php foreach ($tailNavItems as $href => $label): ?>
-                <a href="<?= e($href) ?>" class="<?= $currentPage === $href ? 'active' : '' ?>" data-wait><?= e($label) ?></a>
+                <a href="<?= e($href) ?>" class="<?= $currentPage === $href && ($href !== 'activity.php' || query_string('kind') === '') ? 'active' : '' ?>" data-wait><?= e($label) ?></a>
             <?php endforeach; ?>
 
             <?php if ($isAdminUser): ?>
@@ -149,6 +151,7 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
             <?php if ($currentUser): ?>
                 <div class="topbar-user">
                     <?php if ($currentBranch): ?>
+                        <?php require __DIR__ . '/service_control.php'; ?>
                         <a class="topbar-branch" href="branch_select.php" data-wait title="Cambiar sucursal">
                             <?= e((string) $currentBranch['name']) ?>
                         </a>

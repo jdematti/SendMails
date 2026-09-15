@@ -41,8 +41,10 @@ require_once __DIR__ . '/LocalCache.php';
 require_once __DIR__ . '/DraftRepository.php';
 require_once __DIR__ . '/TemplateDraft.php';
 require_once __DIR__ . '/ComposeService.php';
+require_once __DIR__ . '/WorkerControl.php';
 require_once __DIR__ . '/WorkerRuntime.php';
 require_once __DIR__ . '/ActivityRepository.php';
+require_once __DIR__ . '/PurgeRepository.php';
 
 if (!is_dir(STORAGE_PATH)) {
     mkdir(STORAGE_PATH, 0775, true);

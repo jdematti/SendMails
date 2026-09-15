@@ -21,6 +21,7 @@ try {
     Run-Php 'edge_cases.php'
     Run-Php 'management_lists.php'
     Run-Php 'worker_dispatch.php'
+    Run-Php 'purge.php'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'deploy.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba de despliegue.' }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'updater.ps1')
@@ -33,6 +34,8 @@ try {
         if ($server.HasExited) { throw 'No se pudo iniciar el servidor de pruebas.' }
         & node (Join-Path $PSScriptRoot 'browser.cjs')
         if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba del navegador.' }
+        & node (Join-Path $PSScriptRoot 'browser_operations.cjs')
+        if ($LASTEXITCODE -ne 0) { throw 'Fallo la prueba de control y purga.' }
     }
     Write-Output 'TODAS LAS PRUEBAS OK. Solo datos ficticios; sin transportes externos ni tareas reales.'
 } finally {

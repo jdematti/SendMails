@@ -12,7 +12,7 @@ fs.mkdirSync(artifactDir, {recursive:true});
     for (const url of ['campaigns.php', 'invoice_sends.php']) {
         const response = await page.goto('http://127.0.0.1:8765/' + url);
         assert.equal(response.status(), 200, url);
-        assert.equal(await page.locator('.alert.error').count(), 0, url + ': error en el listado');
+        assert.equal(await page.locator('.alert.error:visible').count(), 0, url + ': error en el listado');
         assert.doesNotMatch(await page.locator('body').innerText(), /SQLSTATE|Fatal error/);
         assert.ok(await page.locator('h1').isVisible(), url + ': titulo visible');
     }

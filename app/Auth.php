@@ -15,6 +15,7 @@ final class Auth
     ];
 
     private const ADMIN_PAGES = [
+        'purge.php',
         'smtp.php',
         'config_db.php',
         'users.php',
@@ -25,6 +26,7 @@ final class Auth
     ];
 
     private const BRANCH_OPTIONAL_PAGES = [
+        'purge.php',
         'branch_select.php',
         'change_password.php',
         'logout.php',

@@ -16,6 +16,7 @@ try {
     echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 } catch (Throwable $e) {
     $status = 'error';
+    WorkerRuntime::recordError($e->getMessage());
     fwrite(STDERR, $e->getMessage() . PHP_EOL);
 } finally { WorkerRuntime::release($status, $processed); }
 exit($status === 'error' ? 1 : 0);

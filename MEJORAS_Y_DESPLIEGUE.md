@@ -12,6 +12,18 @@ Alcance acordado: 3–4 sucursales, 3–4 usuarios, aproximadamente 4.000 client
 - Las plantillas tienen borrador y publicación separados. Sus archivos se conservan antes de una prueba. Un conflicto con la versión publicada permite publicar como plantilla nueva.
 - El inicio y el seguimiento incluyen campañas, facturas, email y WhatsApp. Cada lote permite consultar progreso, destinatarios, errores, pausa y continuación. Se mantienen las páginas administrativas anteriores para sus operaciones existentes.
 - Las tablas tienen un área de desplazamiento y encabezados fijos. El diseño conserva el menú, colores y controles habituales.
+- Los accesos «Ver campañas» y «Ver facturas» abren el seguimiento filtrado. Las páginas administrativas anteriores siguen disponibles desde el seguimiento.
+
+## Control del proceso y purga
+
+- El indicador junto al cambio de sucursal abre un modal con el estado y la última actividad. Es verde cuando el proceso de esa sucursal está operativo; rojo cuando está detenido, por iniciar, sin actividad reciente o con un error. El color siempre se acompaña de texto.
+- Detener/Iniciar afecta solamente a la sucursal seleccionada. Los usuarios con acceso a esa sucursal pueden utilizarlo. Detener deja finalizar la operación en curso y conserva los pendientes. Iniciar permite retomarlos en la próxima ejecución automática, normalmente dentro de un minuto.
+- El control se guarda en `storage/worker-control-<sucursal>.json`, con bloqueo y revisión para detectar cambios concurrentes. El worker consulta esa señal entre operaciones y continúa atendiendo las demás sucursales. La tarea de Windows permanece programada; la interfaz no finaliza procesos del servidor ni necesita privilegios SYSTEM.
+- Si la tarea de Windows no funciona, el botón permanece rojo: Iniciar no repara una tarea deshabilitada o una conexión caída. El modal lo informa. Los errores de un canal no se borran por un envío exitoso del otro canal.
+- `Configuración > Purgar historial` está disponible solo para administradores. Permite todas las sucursales o una específica, tipo, canal y fecha de corte, con un mínimo obligatorio de 90 días.
+- Solo se incluyen lotes completados/detenidos sin destinatarios pendientes o en curso, ni actividad reciente en sus destinatarios o registros. Se eliminan el lote, sus destinatarios, copia del mensaje y registros/eventos asociados. Se conservan bases de origen, plantillas, borradores, bajas y exclusiones.
+- La vista previa identifica hasta 100 lotes por operación, sus sucursales y cantidades. Cambiar filtros requiere calcularla nuevamente. La confirmación revalida y bloquea esos lotes; cualquier cambio o error revierte toda la operación. Repetir una confirmación no duplica la purga.
+- Se conserva un comprobante de fecha, administrador, filtros y cantidades en la base central. La purga no reduce automáticamente el tamaño físico de los archivos de SQL Server. Los registros de pruebas sin lote no se incluyen en esta operación.
 
 ## Envíos y datos
 

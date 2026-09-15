@@ -35,11 +35,6 @@ if (!$fragment) {
 <div id="liveActivity">
 <?php } ?>
 <?php if ($error): ?><div class="alert error"><?= e($error) ?></div><?php endif; ?>
-<div class="alert <?= !empty($worker['healthy']) ? 'success' : 'warning' ?>">
-    <?= !empty($worker['healthy']) ? 'Proceso automático activo.' : 'No hay actividad reciente del proceso automático. Revisá la tarea SendMails Worker.' ?>
-    <?php if (!empty($worker['updated_at'])): ?> Última actividad: <?= e(date('d/m/Y H:i:s', (int) $worker['updated_at'])) ?>.<?php endif; ?>
-    Los envíos confirmados continúan aunque cierres el navegador.
-</div>
 <div class="stats-grid">
     <?php foreach (['pending'=>'Pendientes','scheduled'=>'Programados','paused'=>'Pausados','sending'=>'Procesando','sent'=>'Enviados / aceptados','failed'=>'Fallidos','tests'=>'Pruebas'] as $key=>$label): ?>
         <div class="stat-card"><strong><?= (int) ($summary[$key] ?? 0) ?></strong><span><?= e($label) ?></span></div>

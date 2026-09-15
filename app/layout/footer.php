@@ -56,5 +56,6 @@
     });
 })();
 </script>
+<script src="assets/js/service-control.js" defer></script>
 </body>
 </html>

@@ -4,7 +4,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli-server' || ($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1') { http_response_code(404); exit; }
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 if (strpos($path, '/assets/') === 0 || $path === '/favicon.png') return false;
-$allowed = ['send.php','invoices.php','compose_api.php','activity.php','index.php','template_edit.php','invoice_template_edit.php','templates.php','invoice_templates.php','invoice_export.php','campaigns.php','invoice_sends.php'];
+$allowed = ['send.php','invoices.php','compose_api.php','activity.php','index.php','template_edit.php','invoice_template_edit.php','templates.php','invoice_templates.php','invoice_export.php','campaigns.php','invoice_sends.php','worker_control.php','purge.php'];
 $page = ltrim($path, '/');
 if (!in_array($page, $allowed, true)) { http_response_code(404); exit; }
 if (($_POST['action'] ?? '') === 'send_preview') { http_response_code(403); exit('External transport disabled in fixtures.'); }
