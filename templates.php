@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/app/bootstrap.php';
 
-$pageTitle = 'Plantillas';
-$pageSubtitle = 'Alta y edicion de plantillas HTML con variables.';
+$pageTitle = 'Plantillas de campañas';
+$pageSubtitle = 'Prepará el mensaje y sus adjuntos para reutilizarlos en tus campañas.';
 $templates = [];
 $error = '';
 

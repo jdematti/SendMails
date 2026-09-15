@@ -5,7 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/app/bootstrap.php';
 
 $pageTitle = 'Plantillas de facturas';
-$pageSubtitle = 'Alta y edicion de plantillas HTML para envios de facturas.';
+$pageSubtitle = 'Prepará el mensaje y el enlace que acompañan a las facturas.';
 $templates = [];
 $error = '';
 

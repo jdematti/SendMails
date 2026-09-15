@@ -5,7 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/app/bootstrap.php';
 
 $pageTitle = 'Usuarios';
-$pageSubtitle = 'Administracion de accesos, roles y URL base del sistema.';
+$pageSubtitle = 'Creá usuarios y definí a qué sucursales pueden acceder.';
 $error = '';
 $users = [];
 $appSettings = Settings::app();
@@ -35,7 +35,7 @@ require __DIR__ . '/app/layout/header.php';
 
 <?php if ($error): ?><div class="alert error"><?= e($error) ?></div><?php endif; ?>
 
-<section class="grid cols-2 users-admin-grid">
+<section class="grid users-admin-grid">
     <div class="card">
         <div class="toolbar">
             <h2>Usuarios</h2>
@@ -65,8 +65,8 @@ require __DIR__ . '/app/layout/header.php';
         </div>
     </div>
 
-    <div class="card">
-        <h2>Seguridad</h2>
+    <details class="card disclosure">
+        <summary>Configuración de enlaces de recuperación</summary>
         <form method="post" class="form-grid" data-wait-form>
             <?= csrf_field() ?>
             <div class="field full">
@@ -78,7 +78,7 @@ require __DIR__ . '/app/layout/header.php';
                 <button type="submit">Guardar configuracion</button>
             </div>
         </form>
-    </div>
+    </details>
 </section>
 
 <?php require __DIR__ . '/app/layout/footer.php'; ?>

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/app/bootstrap.php';
 
-$pageTitle = 'SMTP';
+$pageTitle = 'Correo saliente (SMTP)';
 $currentBranch = BranchRepository::selected();
 $pageSubtitle = 'Configuracion del servidor de correo para ' . (string) ($currentBranch['name'] ?? 'la sucursal activa') . '.';
 $error = '';

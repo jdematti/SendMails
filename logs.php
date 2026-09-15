@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/app/bootstrap.php';
 
-$pageTitle = 'Logs';
-$pageSubtitle = 'Detalle de envios realizados y errores SMTP.';
+$pageTitle = 'Historial de correos';
+$pageSubtitle = 'Consultá qué correos se enviaron y el motivo de los errores.';
 $error = '';
 $logs = [];
 $filters = [

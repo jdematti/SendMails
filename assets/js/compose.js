@@ -7,7 +7,8 @@
     let ids = new Set(), rows = [], page = 1, total = 0, draftId = config.draft, revision = 0, busy = false, dirty = false;
     const input = () => {
         const value = Object.fromEntries(new FormData(form));
-        value.plans = Array.from($('plans')?.selectedOptions || [], option => option.value);
+        value.plans = [...form.querySelectorAll('[name="plans[]"]:checked')].map(box => box.value);
+        delete value['plans[]'];
         value.ids = [...ids]; value.include_sent = !!form.elements.include_sent?.checked;
         return value;
     };
@@ -28,16 +29,23 @@
             localStorage.setItem(key + ':filters', JSON.stringify(filters));
         } catch (_) {}
     };
-    const changed = () => { dirty = true; $('saveStatus').textContent = 'Cambios sin guardar'; persist(); };
+    const extraFilters = (reveal = false) => {
+        const values = input();
+        const count = (values.plans || []).length + ['status','snb','email','phone','client_name','include_sent'].filter(name => !!values[name]).length;
+        $('extraFilterCount').textContent = count ? '· ' + count + ' seleccionados' : '';
+        if (reveal && count) $('extraFilters').open = true;
+        if (reveal && values.manual_emails?.trim() && $('manualRecipients')) $('manualRecipients').open = true;
+    };
+    const changed = () => { dirty = true; $('saveStatus').textContent = 'Cambios sin guardar'; extraFilters(); persist(); };
     const fill = value => {
         for (const [name, fieldValue] of Object.entries(value)) {
+            if (name === 'plans') { form.querySelectorAll('[name="plans[]"]').forEach(box => box.checked = (fieldValue || []).includes(box.value)); continue; }
             const field = form.elements.namedItem(name);
             if (!field) continue;
             if (field.type === 'checkbox') field.checked = !!fieldValue;
-            else if (name === 'plans') Array.from(field.options).forEach(option => option.selected = (fieldValue || []).includes(option.value));
             else field.value = fieldValue ?? '';
         }
-        ids = new Set((value.ids || []).map(String)); channels(); selection();
+        ids = new Set((value.ids || []).map(String)); channels(); selection(); extraFilters(true);
     };
     async function api(action, extra = {}) {
         const response = await fetch('compose_api.php', {method: 'POST', headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
@@ -88,6 +96,7 @@
             tr.append(td); $('recipientRows').append(tr);
         }
         $('pageInfo').textContent = 'Página ' + page + ' · ' + total.toLocaleString('es-AR') + ' resultados';
+        document.dispatchEvent(new Event('sendmails:tables'));
         selection(); persist();
     }
     function step(number) {
@@ -141,10 +150,11 @@
         if (dirty && !confirm('Hay cambios sin guardar. ¿Cargar el otro borrador y descartarlos?')) return;
         const loaded = await api('load', {id: Number($('loadDraft').value)});
         fill(loaded.input); saved(loaded); step(1); await search(1);
+        $('loadDraft').closest('details').open = false;
     });
     $('clearFilters').onclick = () => run(async () => {
         for (const name of ['q', 'due_date', 'status', 'snb', 'email', 'phone', 'client_name']) if (form.elements[name]) form.elements[name].value = '';
-        if ($('plans')) Array.from($('plans').options).forEach(option => option.selected = false);
+        form.querySelectorAll('[name="plans[]"]').forEach(box => box.checked = false);
         if (form.elements.include_sent) form.elements.include_sent.checked = false;
         changed(); await search(1);
     });

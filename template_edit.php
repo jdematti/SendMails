@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int) ($_SERVER['CONTENT
 }
 
 $pageTitle = $id > 0 ? 'Editar plantilla' : 'Nueva plantilla';
-$pageSubtitle = $id > 0 ? 'Edita el contenido de la plantilla y reemplaza imágenes sin tocar el HTML.' : 'Crea una plantilla en blanco o partiendo de una ya existente.';
+$pageSubtitle = $id > 0 ? 'Personalizá el mensaje, las imágenes y sus adjuntos.' : 'Creá una plantilla nueva o reutilizá una existente.';
 require __DIR__ . '/app/layout/header.php';
 ?>
 
@@ -165,8 +165,9 @@ require __DIR__ . '/app/layout/header.php';
                 <input id="subject" name="subject" value="<?= e($template['subject']) ?>" required>
             </div>
             <div class="field full">
-                <label>Variables disponibles</label>
+                <details class="disclosure"><summary>Personalizar con datos del cliente</summary><p class="hint">Estos campos se completan automáticamente para cada destinatario:</p>
                 <p class="hint"><?= e(implode(' ', TEMPLATE_VARIABLES)) ?></p>
+                </details>
             </div>
             <div class="field full template-visual-builder" data-template-builder>
                 <div class="builder-head">
@@ -205,8 +206,9 @@ require __DIR__ . '/app/layout/header.php';
                             <option value="3">Tres columnas</option>
                         </select>
                     </div>
+                    <details class="disclosure full"><summary>Botón, banda y pie del mensaje</summary><div class="visual-builder-grid">
                     <div class="field">
-                        <label for="builder_channels_lead">Banda canales: inicio</label>
+                        <label for="builder_channels_lead">Banda de canales: inicio</label>
                         <input id="builder_channels_lead" data-builder-field="channelsLead">
                     </div>
                     <div class="field">
@@ -261,6 +263,7 @@ require __DIR__ . '/app/layout/header.php';
                         <label for="builder_footer_subtitle">Subtítulo del pie</label>
                         <input id="builder_footer_subtitle" data-builder-field="footerSubtitle">
                     </div>
+                    </div></details>
                 </div>
                 <div class="template-image-assistant" data-template-image-assistant>
                     <div class="template-image-head">
@@ -313,14 +316,16 @@ require __DIR__ . '/app/layout/header.php';
                 <label class="hint"><input type="checkbox" name="is_active" value="1"<?= checked((bool) $template['is_active']) ?>> Plantilla activa</label>
             </div>
             <div class="field full">
+                <details class="disclosure"><summary>Enviar una prueba (opcional)</summary>
                 <label for="preview_email">Email para prueba de plantilla</label>
                 <div class="inline-test">
                     <input id="preview_email" name="preview_email" type="email" value="<?= e($previewEmail) ?>" placeholder="destino@dominio.com">
                     <button type="submit" name="action" value="send_preview">Enviar prueba</button>
                 </div>
                 <p class="hint">Envía el asunto, HTML y adjuntos actuales con datos de ejemplo, sin guardar la plantilla.</p>
+                </details>
             </div>
-            <div class="field full actions">
+            <div class="field full actions editor-actions">
                 <button type="submit" name="action" value="save_draft" class="btn secondary" formnovalidate>Guardar borrador</button>
                 <button type="submit" name="action" value="save">Publicar plantilla</button>
                 <?php if ($id > 0): ?><button type="submit" name="action" value="save_copy" class="btn secondary">Publicar como nueva</button><?php endif; ?>
@@ -567,7 +572,14 @@ require __DIR__ . '/app/layout/header.php';
         return images;
     };
 
+    let previewWaitingForLoad = false;
     const syncPreview = () => {
+        // Finish loading the initial iframe before replacing its document.
+        if (document.readyState !== 'complete') {
+            if (!previewWaitingForLoad) window.addEventListener('load', syncPreview, {once:true});
+            previewWaitingForLoad = true;
+            return;
+        }
         preview.setAttribute('srcdoc', renderVariables(editor.value || ''));
     };
 

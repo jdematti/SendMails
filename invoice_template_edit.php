@@ -11,7 +11,7 @@ $draftEditor = 'invoice_template_edit.php';
 $id = normalize_int(query_string('id'), 0, 0);
 $sourceId = $id > 0 ? 0 : normalize_int(query_string('source_id'), 0, 0);
 $pageTitle = $id > 0 ? 'Editar plantilla de facturas' : 'Nueva plantilla de facturas';
-$pageSubtitle = 'Configuracion, remitente y HTML para el envio de facturas.';
+$pageSubtitle = 'Editá el mensaje que acompaña a tus facturas.';
 $error = '';
 $previewEmail = post_string('preview_email');
 $template = [
@@ -192,6 +192,7 @@ require __DIR__ . '/app/layout/header.php';
                 <label for="subject">Asunto</label>
                 <input id="subject" name="subject" value="<?= e($template['subject']) ?>" required>
             </div>
+            <details class="disclosure full"><summary>Remitente y respuestas</summary><div class="form-grid">
             <div class="field">
                 <label for="from_email">Email remitente</label>
                 <input id="from_email" name="from_email" type="email" value="<?= e($template['from_email']) ?>" placeholder="usa SMTP si queda vacio">
@@ -205,9 +206,10 @@ require __DIR__ . '/app/layout/header.php';
                 <input id="reply_to" name="reply_to" type="email" value="<?= e($template['reply_to']) ?>">
             </div>
             <div class="field">
-                <label for="bcc">BCC</label>
+                <label for="bcc">Copia oculta (BCC)</label>
                 <input id="bcc" name="bcc" type="email" value="<?= e($template['bcc']) ?>">
             </div>
+            </div></details>
             <div class="field">
                 <label for="web">Dominio web</label>
                 <input id="web" name="web" value="<?= e($template['web']) ?>" required>
@@ -216,6 +218,7 @@ require __DIR__ . '/app/layout/header.php';
                 <label for="loc_prefix">Prefijo localidad</label>
                 <input id="loc_prefix" name="loc_prefix" value="<?= e($template['loc_prefix']) ?>" required>
             </div>
+            <details class="disclosure full"><summary>Datos de contacto y redes</summary><div class="form-grid">
             <div class="field full">
                 <label for="domicilio">Domicilio</label>
                 <input id="domicilio" name="domicilio" value="<?= e($template['domicilio']) ?>">
@@ -232,31 +235,37 @@ require __DIR__ . '/app/layout/header.php';
                 <label for="whatsapp">WhatsApp</label>
                 <input id="whatsapp" name="whatsapp" value="<?= e($template['whatsapp']) ?>">
             </div>
+            </div></details>
             <div class="field">
                 <label for="test_email">Email modo test</label>
                 <input id="test_email" name="test_email" type="email" value="<?= e($template['test_email']) ?>">
             </div>
             <div class="field full">
-                <label>Variables disponibles</label>
+                <details class="disclosure"><summary>Personalizar con datos de la factura</summary>
                 <p class="hint"><?= e('{{nombre}} {{email}} {{importe}} {{snb}} {{vencimiento}} {{url_factura}} {{web}} {{domicilio}} {{facebook}} {{instagram}} {{whatsapp}}') ?></p>
+                </details>
             </div>
             <div class="field full">
-                <label for="html_body">HTML</label>
+                <details class="disclosure advanced-html-editor"><summary>Editar contenido HTML (avanzado)</summary>
+                <label for="html_body">Contenido HTML</label>
                 <textarea id="html_body" name="html_body" class="code" required><?= e($template['html_body']) ?></textarea>
+                </details>
             </div>
             <div class="field full">
-                <label class="hint"><input type="checkbox" name="test_mode" value="1"<?= checked((bool) $template['test_mode']) ?>> Modo test activo</label>
+                <label class="hint"><input type="checkbox" name="test_mode" value="1"<?= checked((bool) $template['test_mode']) ?>> Modo prueba activo (solo email)</label>
                 <label class="hint"><input type="checkbox" name="is_active" value="1"<?= checked((bool) $template['is_active']) ?>> Plantilla activa</label>
             </div>
             <div class="field full">
+                <details class="disclosure"><summary>Enviar una prueba (opcional)</summary>
                 <label for="preview_email">Email para prueba de plantilla</label>
                 <div class="inline-test">
                     <input id="preview_email" name="preview_email" type="email" value="<?= e($previewEmail) ?>" placeholder="destino@dominio.com">
                     <button type="submit" name="action" value="send_preview">Enviar prueba</button>
                 </div>
                 <p class="hint">Envia el asunto, remitente y HTML actuales con datos de factura de ejemplo, sin guardar la plantilla.</p>
+                </details>
             </div>
-            <div class="field full actions">
+            <div class="field full actions editor-actions">
                 <button type="submit" name="action" value="save_draft" class="btn secondary" formnovalidate>Guardar borrador</button>
                 <button type="submit" name="action" value="save">Publicar plantilla</button>
                 <?php if ($id > 0): ?><button type="submit" name="action" value="save_copy" class="btn secondary">Publicar como nueva</button><?php endif; ?>

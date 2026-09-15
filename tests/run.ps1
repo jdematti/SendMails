@@ -51,6 +51,8 @@ try {
             if ($server.HasExited) { throw 'No se pudo iniciar el servidor de smoke test.' }
             & node (Join-Path $PSScriptRoot 'browser_smoke.cjs')
             if ($LASTEXITCODE -ne 0) { throw 'Fallo el smoke test completo.' }
+            & node (Join-Path $PSScriptRoot 'browser_usability.cjs') --verify --smoke
+            if ($LASTEXITCODE -ne 0) { throw 'Fallo la revision de usabilidad.' }
             if (Select-String -LiteralPath ($log+'-smoke.err') -Pattern 'PHP (Warning|Fatal|Parse|Deprecated|Notice)' -Quiet) {
                 throw ('PHP registro errores durante el smoke test: '+$log+'-smoke.err')
             }

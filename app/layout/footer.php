@@ -26,6 +26,13 @@
         form.addEventListener('submit', () => showWait());
     });
 
+    // Reveal an invalid field before the browser tries to focus it.
+    document.addEventListener('invalid', (event) => {
+        for (let node = event.target.parentElement; node; node = node.parentElement) {
+            if (node.tagName === 'DETAILS') node.open = true;
+        }
+    }, true);
+
     const menuToggle = document.querySelector('.menu-toggle');
     const mainNav = document.getElementById('mainNav');
     if (menuToggle && mainNav) {
@@ -57,5 +64,6 @@
 })();
 </script>
 <script src="assets/js/service-control.js" defer></script>
+<script src="assets/js/usability.js" defer></script>
 </body>
 </html>

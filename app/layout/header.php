@@ -23,7 +23,7 @@ $invoiceItems = [
 $configItems = [
     'users.php' => 'Usuarios',
     'branches.php' => 'Sucursales',
-    'smtp.php' => 'SMTP',
+    'smtp.php' => 'Correo saliente (SMTP)',
     'whatsapp.php' => 'WhatsApp / Meta',
     'config_db.php' => 'Base de datos',
     'purge.php' => 'Purgar historial',
@@ -67,8 +67,10 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="stylesheet" href="assets/css/app.css">
     <link rel="stylesheet" href="assets/css/agility.css">
+    <link rel="stylesheet" href="assets/css/usability.css">
 </head>
 <body>
+<a class="skip-link" href="#mainContent">Ir al contenido</a>
 <div class="app-shell">
     <aside class="sidebar">
         <div class="sidebar-head">
@@ -140,7 +142,7 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
             <?php endif; ?>
         </nav>
     </aside>
-    <main class="main">
+    <main class="main" id="mainContent" tabindex="-1">
         <header class="topbar">
             <div>
                 <h1><?= e($pageTitle ?? APP_NAME) ?></h1>
@@ -156,8 +158,8 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
                             <?= e((string) $currentBranch['name']) ?>
                         </a>
                     <?php endif; ?>
-                    <span><?= e($currentUser['full_name']) ?> · <?= e($currentUser['role']) ?></span>
-                    <a class="topbar-icon-action" href="change_password.php" data-wait title="Cambiar contraseña" aria-label="Cambiar contraseña">
+                    <details class="account-menu"><summary aria-label="Mi cuenta: <?= e($currentUser['full_name']) ?>"><?= e($currentUser['full_name']) ?> · <?= e($currentUser['role']) ?></summary><div class="account-actions">
+                    <a class="topbar-icon-action" href="change_password.php" data-wait title="Cambiar contraseña" aria-label="Cambiar contraseña">Cambiar contraseña
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <circle cx="8" cy="15" r="3"></circle>
                             <path d="M10.6 13.4 18 6"></path>
@@ -165,13 +167,14 @@ $isConfigActive = array_key_exists($currentPage, $configItems);
                             <path d="M13.9 10.1 16 12.2"></path>
                         </svg>
                     </a>
-                    <a class="topbar-icon-action" href="logout.php" title="Salir" aria-label="Salir">
+                    <a class="topbar-icon-action" href="logout.php" title="Cerrar sesión" aria-label="Cerrar sesión">Cerrar sesión
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M10 5H6.75A1.75 1.75 0 0 0 5 6.75v10.5c0 .97.78 1.75 1.75 1.75H10"></path>
                             <path d="M15 8l4 4-4 4"></path>
                             <path d="M19 12H9"></path>
                         </svg>
                     </a>
+                    </div></details>
                 </div>
             <?php endif; ?>
         </header>

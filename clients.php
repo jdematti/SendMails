@@ -5,7 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/app/bootstrap.php';
 
 $pageTitle = 'Clientes';
-$pageSubtitle = 'Listado desde la vista v_sendmail_clientes.';
+$pageSubtitle = 'Buscá clientes y elegí quiénes pueden recibir campañas.';
 $term = query_string('q');
 $subscription = query_string('subscription');
 if (!in_array($subscription, ['', 'subscribed', 'unsubscribed'], true)) {

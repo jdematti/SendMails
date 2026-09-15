@@ -15,6 +15,16 @@ Alcance acordado: 3–4 sucursales, 3–4 usuarios, aproximadamente 4.000 client
 - Las tablas tienen un área de desplazamiento y encabezados fijos. El diseño conserva el menú, colores y controles habituales.
 - Los accesos «Ver campañas» y «Ver facturas» abren el seguimiento filtrado. Las páginas administrativas anteriores siguen disponibles desde el seguimiento.
 
+## Uso rápido de las pantallas compactas
+
+1. En Inicio, elegí **Crear campaña** o **Preparar facturas**. Buscá y seleccioná los destinatarios.
+2. Abrí **Más filtros** solo si los necesitás. Los planes se marcan con casillas. Para direcciones manuales, usá **Agregar emails fuera de la lista**.
+3. Continuá al mensaje, elegí la plantilla y revisá antes de confirmar. **Guardar borrador** conserva el trabajo; **Continuar un borrador** permite retomarlo desde otra cuenta de la misma sucursal.
+4. En Seguimiento, abrí **Ver detalle** para consultar destinatarios, errores o pausar un envío. **Ver todos los destinatarios** conserva la consulta general. La administración anterior está en **Más opciones**.
+5. En Plantillas, el contenido principal y los adjuntos quedan a la vista. Remitente, personalización, diseño secundario, código y envío de prueba se despliegan cuando se necesitan. El nombre de usuario abre **Cambiar contraseña** y **Cerrar sesión**.
+
+Las tablas largas tienen desplazamiento propio y un aviso cuando hay más filas o columnas. El seguimiento conserva la posición de lectura durante sus actualizaciones. La información sobre modo de prueba y los avisos de envíos que necesitan revisión siguen visibles.
+
 ## Control del proceso y purga
 
 - El indicador junto al cambio de sucursal abre un modal con el estado y la última actividad. Es verde cuando el proceso de esa sucursal está operativo; rojo cuando está detenido, por iniciar, sin actividad reciente o con un error. El color siempre se acompaña de texto.
@@ -72,6 +82,8 @@ Para sumar el smoke test de pantallas públicas y administrativas, login real, r
     powershell -NoProfile -ExecutionPolicy Bypass -File tests/run.ps1 -Smoke
 
 `-Smoke` incluye las pruebas de `-Browser`. El ejecutor deshabilita las funciones de transporte de PHP para correo y HTTP; el servidor local también rechaza los botones de envío de prueba y sincronización. El navegador del smoke bloquea recursos externos. Los datos y las contraseñas son ficticios, los tokens se generan localmente y no se envían. El resultado por comprobación queda en `smoke-results.json`, junto con las capturas. Las pruebas SQL de WhatsApp simulan únicamente la respuesta de Meta y verifican altas, actualizaciones, bajas, eventos repetidos y estados fuera de orden sobre la base temporal.
+
+El smoke también ejecuta `browser_usability.cjs --verify --smoke`: captura 25 páginas en escritorio y móvil, comprueba desbordes y ejecuta 11 recorridos de uso. Guarda `after/metrics.json`, `after/flows.json` y capturas. `tests/visual_review.ps1` permite una revisión aislada adicional en el puerto local 8766; se cierra y limpia automáticamente después de 30 minutos, configurables con `-Minutes`. La comparación realizada está en [USABILIDAD_2026-09-15.md](USABILIDAD_2026-09-15.md).
 
 Si Playwright no está en los módulos habituales de Node, `SENDMAILS_PLAYWRIGHT` acepta la ruta del paquete. Las capturas se guardan en el directorio temporal `sendmails-ui-artifacts`, o en `SENDMAILS_ARTIFACT_DIR`.
 
