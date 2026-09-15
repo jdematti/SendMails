@@ -17,6 +17,7 @@ require_once __DIR__ . '/BranchRepository.php';
 require_once __DIR__ . '/SchemaNotReady.php';
 require_once __DIR__ . '/MessageSnapshot.php';
 require_once __DIR__ . '/AgilityMigration.php';
+require_once __DIR__ . '/PurgeMigration.php';
 require_once __DIR__ . '/Schema.php';
 require_once __DIR__ . '/UserRepository.php';
 require_once __DIR__ . '/UnsubscribeRepository.php';

@@ -9,6 +9,7 @@ $preview = null; $error = '';
 foreach ($_SESSION['purge_previews'] ?? [] as $token=>$item) if (time() - (int) $item['created_at'] > 900) unset($_SESSION['purge_previews'][$token]);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
+    set_time_limit(120);
     try {
         if (post_string('action') === 'preview') {
             $filters = PurgeRepository::filters($_POST);
@@ -20,15 +21,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$preview) throw new RuntimeException('La vista previa venció. Calculala nuevamente.');
             $filters = $preview['filters'];
             if (post_string('acknowledge') !== 'yes') throw new RuntimeException('Confirmá que revisaste los registros a eliminar.');
-            set_time_limit(120);
             $receipt = PurgeRepository::execute($preview);
             flash('success', 'Purga completada: ' . $receipt['totals']['batches'] . ' lotes, ' . $receipt['totals']['recipients'] . ' destinatarios y ' . $receipt['totals']['records'] . ' registros eliminados.');
             redirect('purge.php');
         } else { throw new InvalidArgumentException('Acción inválida.'); }
-    } catch (Throwable $e) { $error = $e->getMessage(); $preview = null; }
+    } catch (Throwable $e) {
+        error_log('SendMails purga [' . post_string('action') . ']: ' . $e->getMessage());
+        $error = $e->getMessage(); $preview = null;
+    }
 }
 $branches = BranchRepository::all();
-$recent = PurgeRepository::recent();
+$recent = []; $receiptError = '';
+try { $recent = PurgeRepository::recent(); } catch (Throwable $e) {
+    error_log('SendMails purga [comprobantes]: ' . $e->getMessage());
+    $receiptError = 'No se pudieron consultar las últimas purgas. Volvé a abrir esta página para comprobar el resultado antes de repetir una operación.';
+}
 require __DIR__ . '/app/layout/header.php';
 ?>
 <?php if ($error): ?><div class="alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
@@ -41,7 +48,7 @@ require __DIR__ . '/app/layout/header.php';
         <div class="field"><label for="purgeChannel">Canal</label><select name="channel" id="purgeChannel"><option value="">Email y WhatsApp</option><option value="email"<?= selected('email',$filters['channel']) ?>>Email</option><option value="whatsapp"<?= selected('whatsapp',$filters['channel']) ?>>WhatsApp</option></select></div>
         <div class="actions"><button type="submit" id="previewPurge">Calcular vista previa</button></div>
     </form>
-    <p class="hint">La purga afecta solo al historial de SendMails. Conserva clientes, facturas de origen, plantillas, borradores, bajas y exclusiones. Cada operación incluye hasta <?= PurgeRepository::LIMIT ?> lotes, empezando por los más antiguos.</p>
+    <p class="hint">La purga afecta solo al historial de SendMails. Conserva clientes, facturas de origen, plantillas, borradores, bajas y exclusiones. Cada operación incluye hasta <?= PurgeRepository::LIMIT ?> lotes y aproximadamente <?= number_format(PurgeRepository::ROW_BUDGET,0,',','.') ?> destinatarios y registros asociados en total, empezando por los más antiguos. Un lote que supera ese volumen se procesa solo.</p>
 </section>
 <?php if ($preview): ?>
 <section class="card" id="purgeReview">
@@ -59,8 +66,10 @@ require __DIR__ . '/app/layout/header.php';
     <?php else: ?><p>No hay lotes que cumplan estos filtros y la antigüedad mínima.</p><?php endif; ?>
 </section>
 <?php endif; ?>
-<section class="card"><h2>Últimas purgas</h2><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Administrador</th><th>Lotes</th><th>Destinatarios</th><th>Registros</th></tr></thead><tbody>
+<section class="card"><h2>Últimas purgas</h2>
+<?php if ($receiptError): ?><div class="alert error" role="alert"><?= e($receiptError) ?></div><?php endif; ?>
+<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Administrador</th><th>Lotes</th><th>Destinatarios</th><th>Registros</th></tr></thead><tbody>
 <?php foreach ($recent as $receipt): ?><tr><td><?= e(format_datetime($receipt['at'])) ?></td><td><?= e($receipt['user_name']) ?></td><td><?= (int)$receipt['totals']['batches'] ?></td><td><?= (int)$receipt['totals']['recipients'] ?></td><td><?= (int)$receipt['totals']['records'] ?></td></tr><?php endforeach; ?>
-<?php if (!$recent): ?><tr><td colspan="5">Todavía no se realizaron purgas.</td></tr><?php endif; ?></tbody></table></div></section>
+<?php if (!$recent && !$receiptError): ?><tr><td colspan="5">Todavía no se realizaron purgas.</td></tr><?php endif; ?></tbody></table></div></section>
 <script src="assets/js/purge.js" defer></script>
 <?php require __DIR__ . '/app/layout/footer.php'; ?>

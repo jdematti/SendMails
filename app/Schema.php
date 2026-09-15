@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class Schema
 {
-    public const VERSION = '20260914-1';
+    public const VERSION = '20260914-2';
     private static bool $checked = false;
     private static bool $migrating = false;
 
@@ -36,8 +36,11 @@ final class Schema
                 $version = $pdo->query("SELECT setting_value FROM dbo.SendMail_Settings WHERE setting_key = 'schema_version'")->fetchColumn();
             }
             if ($version !== self::VERSION) {
-                self::applyLegacy($version === null && !$pdo->query("SELECT OBJECT_ID('dbo.SendMail_Users', 'U')")->fetchColumn());
-                AgilityMigration::run($pdo);
+                if ($version !== '20260914-1') {
+                    self::applyLegacy($version === null && !$pdo->query("SELECT OBJECT_ID('dbo.SendMail_Users', 'U')")->fetchColumn());
+                    AgilityMigration::run($pdo);
+                }
+                PurgeMigration::run($pdo);
                 $stmt = $pdo->prepare("UPDATE dbo.SendMail_Settings SET setting_value=:version, updated_at=SYSDATETIME() WHERE setting_key='schema_version'");
                 $stmt->execute([':version' => self::VERSION]);
                 if (!$stmt->rowCount()) {
