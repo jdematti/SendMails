@@ -1,4 +1,8 @@
-param([Parameter(Mandatory=$true)][string]$ProjectDir, [string]$BackupBase = '')
+param(
+    [Parameter(Mandatory=$true)][string]$ProjectDir,
+    [string]$BackupBase = '',
+    [ValidateRange(0,600)][int]$WorkerWaitSeconds = 180
+)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $ProjectDir).ProviderPath.TrimEnd('\')
 if (!(Test-Path -LiteralPath (Join-Path $root 'app\bootstrap.php')) -or !(Test-Path -LiteralPath (Join-Path $root 'storage\db_config.json'))) {
@@ -8,17 +12,42 @@ $task = Get-ScheduledTask -TaskName 'SendMails Worker' -ErrorAction SilentlyCont
 $flag = Join-Path $root 'storage\maintenance.flag'
 Set-Content -LiteralPath $flag -Value 'Actualizacion en curso' -Encoding ASCII
 if ($task) {
-    Disable-ScheduledTask -TaskName $task.TaskName | Out-Null
-    if ((Get-ScheduledTask -TaskName $task.TaskName).State -eq 'Running') {
-        throw 'El worker aun esta enviando. No se lo interrumpio. Espera a que termine y ejecuta otra vez el actualizador; la tarea quedo deshabilitada.'
-    }
+    Disable-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath | Out-Null
 }
-$stream = $null
-try {
-    $stream = [IO.File]::Open((Join-Path $root 'storage\worker.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
-} catch {
-    throw 'Hay otro proceso de envio activo. Espera a que termine y vuelve a ejecutar el actualizador.'
-} finally { if ($stream) { $stream.Dispose() } }
+$wait = [Diagnostics.Stopwatch]::StartNew()
+$nextNotice = 0
+$waited = $false
+while ($true) {
+    $taskBusy = $false
+    if ($task) {
+        $currentTask = Get-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop
+        if (!$currentTask) { throw 'No se pudo comprobar el estado de la tarea del worker.' }
+        $taskBusy = $currentTask.State -in @('Running','Queued')
+    }
+    $lockBusy = $false
+    $stream = $null
+    try {
+        $stream = [IO.File]::Open((Join-Path $root 'storage\worker.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    } catch [IO.IOException] {
+        # Solo una infraccion de uso compartido/bloqueo indica un worker ocupado.
+        $errorCode = $_.Exception.HResult -band 0xffff
+        if ($errorCode -notin @(32,33)) { throw }
+        $lockBusy = $true
+    } finally { if ($stream) { $stream.Dispose() } }
+    if (!$taskBusy -and !$lockBusy) { break }
+    if ($wait.Elapsed.TotalSeconds -ge $WorkerWaitSeconds) {
+        throw ('El worker sigue en ejecucion o mantiene su bloqueo tras esperar ' + $WorkerWaitSeconds + ' segundos. No se lo interrumpio ni se actualizo el codigo. El mantenimiento sigue activo y la tarea sigue deshabilitada. Revisa SendMails Worker y storage\logs en el servidor; cuando termine, ejecuta nuevamente el actualizador.')
+    }
+    if ($wait.Elapsed.TotalSeconds -ge $nextNotice) {
+        $remaining = [Math]::Ceiling($WorkerWaitSeconds - $wait.Elapsed.TotalSeconds)
+        Write-Host ('Esperando que termine el worker, sin interrumpirlo... quedan hasta ' + $remaining + ' segundos.')
+        $nextNotice = $wait.Elapsed.TotalSeconds + 10
+    }
+    $waited = $true
+    Start-Sleep -Milliseconds 1000
+}
+$wait.Stop()
+if ($waited) { Write-Host 'Worker finalizado. Continuando con el respaldo y la actualizacion.' }
 if ($BackupBase -eq '') { $BackupBase = Join-Path $env:LOCALAPPDATA 'SendMails\backups' }
 $backup = Join-Path $backupBase ('update-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
 if ([IO.Path]::GetFullPath($backup).StartsWith($root + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'El respaldo debe quedar fuera del sitio web.' }

@@ -36,8 +36,22 @@ New-Item -ItemType Directory -Path (Join-Path $target 'storage') -Force | Out-Nu
 Set-Content -LiteralPath (Join-Path $target 'storage\db_config.json') -Value '{"fixture":true}'
 $global:sendMailsFixtureTaskState='Ready'
 $global:sendMailsFixtureDisabled=$false
-function Get-ScheduledTask { param($TaskName,$ErrorAction) [pscustomobject]@{TaskName=$TaskName;State=$global:sendMailsFixtureTaskState} }
-function Disable-ScheduledTask { param($TaskName) $global:sendMailsFixtureDisabled=$true }
+$global:sendMailsFixtureTaskAvailable=$true
+$global:sendMailsFixtureSleepHook=$null
+$global:sendMailsFixtureSleeps=0
+function Get-ScheduledTask { param($TaskName,$TaskPath,$ErrorAction) if ($global:sendMailsFixtureTaskAvailable) { [pscustomobject]@{TaskName=$TaskName;TaskPath='\';State=$global:sendMailsFixtureTaskState} } }
+function Disable-ScheduledTask { param($TaskName,$TaskPath) $global:sendMailsFixtureDisabled=$true }
+function Start-Sleep {
+    param($Milliseconds)
+    $global:sendMailsFixtureSleeps++
+    if ($global:sendMailsFixtureSleepHook) { & $global:sendMailsFixtureSleepHook }
+    Microsoft.PowerShell.Utility\Start-Sleep -Milliseconds $Milliseconds
+}
+function Assert-Waiting {
+    Assert-True $global:sendMailsFixtureDisabled 'Debe deshabilitar la tarea antes de esperar'
+    Assert-True (Test-Path -LiteralPath (Join-Path $target 'storage\maintenance.flag')) 'Debe mantener mantenimiento durante la espera'
+    Assert-True (@(Get-ChildItem -LiteralPath $backups -Directory).Count -eq $global:sendMailsFixtureBackupCount) 'No debe empezar el respaldo durante un envio'
+}
 & (Join-Path $project 'deploy_prepare.ps1') -ProjectDir $target -BackupBase $backups
 Assert-True $global:sendMailsFixtureDisabled 'Debe deshabilitar la tarea'
 Assert-True (Test-Path -LiteralPath (Join-Path $target 'storage\maintenance.flag')) 'Debe activar mantenimiento'
@@ -47,18 +61,42 @@ Assert-True (Test-Path -LiteralPath (Join-Path $backup.FullName 'scripts-origina
 Assert-True ((Get-Content -LiteralPath (Join-Path $target 'storage\db_config.json') -Raw).Trim() -eq '{"fixture":true}') 'No debe cambiar configuracion privada'
 Invoke-Git @('-C',$target,'merge','-q','--ff-only','origin/main')
 Assert-True ((Get-Content -LiteralPath (Join-Path $target 'actualizar_produccion.cmd') -Raw).Trim() -eq '@echo new') 'El merge debe instalar los scripts'
+# La tarea activa puede terminar normalmente dentro de la misma actualizacion.
+foreach ($busyState in @('Running','Queued')) {
+    $global:sendMailsFixtureBackupCount=@(Get-ChildItem -LiteralPath $backups -Directory).Count
+    $global:sendMailsFixtureTaskState=$busyState
+    $global:sendMailsFixtureSleeps=0
+    $global:sendMailsFixtureSleepHook={ Assert-Waiting; $global:sendMailsFixtureTaskState='Ready' }
+    & (Join-Path $project 'deploy_prepare.ps1') -ProjectDir $target -BackupBase $backups -WorkerWaitSeconds 5
+    Assert-True ($global:sendMailsFixtureSleeps -eq 1) ('Debe esperar a que termine la tarea ' + $busyState)
+    Assert-True (@(Get-ChildItem -LiteralPath $backups -Directory).Count -eq $global:sendMailsFixtureBackupCount + 1) 'Debe continuar solo despues de terminar'
+}
+$global:sendMailsFixtureSleepHook=$null
+$global:sendMailsFixtureBackupCount=@(Get-ChildItem -LiteralPath $backups -Directory).Count
 $global:sendMailsFixtureTaskState='Running'
 $rejected=$false
-try { & (Join-Path $project 'deploy_prepare.ps1') -ProjectDir $target -BackupBase $backups } catch { $rejected=$true }
+try { & (Join-Path $project 'deploy_prepare.ps1') -ProjectDir $target -BackupBase $backups -WorkerWaitSeconds 1 } catch { $rejected=$_.Exception.Message -like '*tras esperar 1 segundos*' }
 Assert-True $rejected 'No debe actualizar mientras la tarea envia'
+Assert-Waiting
 $global:sendMailsFixtureTaskState='Ready'
 $lock=[IO.File]::Open((Join-Path $target 'storage\worker.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
 try {
     $rejected=$false
-    try { & (Join-Path $project 'deploy_prepare.ps1') -ProjectDir $target -BackupBase $backups } catch { $rejected=$true }
+    try { & (Join-Path $project 'deploy_prepare.ps1') -ProjectDir $target -BackupBase $backups -WorkerWaitSeconds 0 } catch { $rejected=$_.Exception.Message -like '*tras esperar 0 segundos*' }
     Assert-True $rejected 'No debe actualizar mientras otro worker retiene el bloqueo'
+    Assert-Waiting
 } finally { $lock.Dispose() }
-Write-Output 'DEPLOY OK: sintaxis PowerShell, respaldo, scripts no rastreados, fast-forward, conservacion de configuracion, tarea en curso y bloqueo activo.'
+# Un worker iniciado por consola tambien debe terminar, aunque no exista tarea.
+$global:sendMailsFixtureTaskAvailable=$false
+$global:sendMailsFixtureSleeps=0
+$global:sendMailsFixtureLock=[IO.File]::Open((Join-Path $target 'storage\worker.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+try {
+    $global:sendMailsFixtureSleepHook={ Assert-Waiting; $global:sendMailsFixtureLock.Dispose() }
+    & (Join-Path $project 'deploy_prepare.ps1') -ProjectDir $target -BackupBase $backups -WorkerWaitSeconds 5
+    Assert-True ($global:sendMailsFixtureSleeps -eq 1) 'Debe esperar a que se libere el bloqueo sin tarea programada'
+    Assert-True (@(Get-ChildItem -LiteralPath $backups -Directory).Count -eq $global:sendMailsFixtureBackupCount + 1) 'Debe continuar despues de liberar el bloqueo'
+} finally { $global:sendMailsFixtureLock.Dispose(); $global:sendMailsFixtureSleepHook=$null }
+Write-Output 'DEPLOY OK: respaldo, configuracion privada, fast-forward, espera de tareas Running/Queued, bloqueo sin tarea y timeout sin respaldo ni interrupcion.'
 function New-ScheduledTaskPrincipal { param($UserId,$LogonType,$RunLevel) [pscustomobject]@{UserId=$UserId;LogonType=$LogonType;RunLevel=$RunLevel} }
 function New-ScheduledTaskAction { param($Execute,$Argument,$WorkingDirectory) [pscustomobject]@{Execute=$Execute;Argument=$Argument;WorkingDirectory=$WorkingDirectory} }
 function New-ScheduledTaskTrigger { param([switch]$Once,$At,$RepetitionInterval,$RepetitionDuration) [pscustomobject]@{Interval=$RepetitionInterval} }
