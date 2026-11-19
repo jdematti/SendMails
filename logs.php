@@ -21,7 +21,9 @@ if (!in_array($limit, $allowedLimits, true)) {
 }
 
 try {
+    $historyStarted = microtime(true);
     $logs = QueueRepository::recentLogs($limit, $filters);
+    header(sprintf('Server-Timing: history;dur=%.1f', (microtime(true)-$historyStarted)*1000));
 } catch (Throwable $e) {
     $error = $e->getMessage();
 }

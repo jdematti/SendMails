@@ -287,20 +287,12 @@ final class QueueRepository
 
         $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
         $stmt = Database::pdo()->prepare(
-            "SELECT TOP $limit
-                id,
-                created_at,
-                client_name,
-                client_code,
-                email_to,
-                email_subject,
-                smtp_host,
-                status,
-                error_message,
-                duration_ms
-             FROM dbo.SendMail_Log
-             $whereSql
-             ORDER BY created_at DESC, id DESC"
+            "WITH selected_logs AS (SELECT TOP $limit id,created_at FROM dbo.SendMail_Log
+                $whereSql ORDER BY created_at DESC,id DESC)
+             SELECT l.id,l.created_at,l.client_name,l.client_code,l.email_to,l.email_subject,
+                l.smtp_host,l.status,l.error_message,l.duration_ms
+             FROM selected_logs selected INNER JOIN dbo.SendMail_Log l ON l.id=selected.id
+             ORDER BY selected.created_at DESC,selected.id DESC"
         );
         $stmt->execute($params);
         return $stmt->fetchAll();

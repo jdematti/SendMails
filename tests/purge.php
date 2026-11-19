@@ -144,6 +144,26 @@ foreach($large as $i=>$id){
 }
 check((int)$pdo->query("SELECT COUNT(*) FROM dbo.SendMail_Log WHERE email_to='unrelated@example.invalid'")->fetchColumn()===50000,'No borrar historial ajeno al lote');
 echo 'PURGE SCALE OK: 14000 destinatarios, 14000 logs asociados, 50000 logs ajenos; '.round(microtime(true)-$started,2)." s para las tres operaciones locales.\n";
+// Many eligible batches: counts must apply to the bounded preview, not the
+// complete historic set. This block only previews, then rolls back its fixture.
+$pdo->beginTransaction();
+try {
+    $pdo->exec("WITH n AS (SELECT TOP 200 ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) AS id FROM sys.all_objects)
+        INSERT INTO dbo.SendMail_Campaigns(branch_id,template_id,name,send_mode,status,created_at,completed_at)
+            SELECT $otherBranch,$template,'Previa masiva fixture '+CONVERT(varchar(10),id),'individual','completed','20200101','20200201' FROM n;
+        INSERT INTO dbo.SendMail_Queue(branch_id,campaign_id,template_id,email_to,status,created_at,scheduled_at,sent_at)
+            SELECT b.branch_id,b.id,b.template_id,'preview@example.invalid','sent','20200101','20200101','20200102'
+            FROM dbo.SendMail_Campaigns b CROSS JOIN (SELECT TOP 50 object_id FROM sys.all_objects) n
+            WHERE b.name LIKE 'Previa masiva fixture %';
+        INSERT INTO dbo.SendMail_Log(branch_id,campaign_id,queue_id,email_to,status,created_at)
+            SELECT q.branch_id,q.campaign_id,q.id,q.email_to,'sent','20200102' FROM dbo.SendMail_Queue q
+            INNER JOIN dbo.SendMail_Campaigns b ON b.id=q.campaign_id WHERE b.name LIKE 'Previa masiva fixture %';");
+    $started=microtime(true);
+    $many=PurgeRepository::preview(['branch_id'=>$otherBranch,'channel'=>'email','kind'=>'campaign']);
+    check(count($many['rows'])===20 && $many['more'],'Vista previa acotada sobre muchos lotes');
+    check((int)$many['totals']['recipients']===1000 && (int)$many['totals']['records']===1000,'Conteos de los lotes seleccionados');
+    echo 'PURGE PREVIEW OK: 200 lotes elegibles, 10000 destinatarios y 10000 logs asociados; '.round((microtime(true)-$started)*1000)." ms. Solo vista previa sobre fixtures.\n";
+} finally { if($pdo->inTransaction())$pdo->rollBack(); }
 $ui=fixture('campaign_email',1);$pdo->exec("UPDATE dbo.SendMail_Campaigns SET name='UI purge fixture' WHERE id=".$ui['id']);
 $control=WorkerControl::read(1);
 if(!$control['enabled'])$control=WorkerControl::set(1,true,1,(int)$control['revision']);

@@ -79,13 +79,21 @@ final class PurgeRepository
         $where[] = "NOT EXISTS(SELECT 1 FROM ($related) related WHERE related.created_at>=@cutoff)";
         $kind = $s['kind'] ? "'" . $s['kind'] . "'" : 'b.source_type';
         $limit = self::LIMIT + 1;
-        $sql = "DECLARE @cutoff datetime2=CONVERT(datetime2,:cutoff,120);
-            SELECT TOP $limit b.id,b.branch_id,b.name,b.status,COALESCE(b.completed_at,b.created_at) AS finished_at,
+        // Materialize eligible IDs before counting recipients/logs: otherwise a
+        // sort can evaluate those correlated counts for the entire old history.
+        $sql = "SET NOCOUNT ON;
+            DECLARE @cutoff datetime2=CONVERT(datetime2,:cutoff,120);
+            DECLARE @candidates TABLE(id int,branch_id int);
+            INSERT INTO @candidates SELECT TOP $limit b.id,b.branch_id FROM dbo.$batch b$hint
+                WHERE " . implode(' AND ', $where) . " ORDER BY COALESCE(b.completed_at,b.created_at),b.id;
+            SET NOCOUNT OFF;
+            SELECT b.id,b.branch_id,b.name,b.status,COALESCE(b.completed_at,b.created_at) AS finished_at,
                 COALESCE(branch.name,'Sucursal eliminada') AS branch_name,$kind AS kind,
                 (SELECT COUNT(*) FROM dbo.$queue q$hint WHERE q.$foreign=b.id AND q.branch_id=b.branch_id) AS recipients,
                 (SELECT COUNT(*) FROM ($related) related) AS records
-            FROM dbo.$batch b$hint LEFT JOIN dbo.SendMail_Branches branch ON branch.id=b.branch_id
-            WHERE " . implode(' AND ', $where) . ' ORDER BY COALESCE(b.completed_at,b.created_at),b.id';
+            FROM @candidates selected INNER JOIN dbo.$batch b$hint ON b.id=selected.id AND b.branch_id=selected.branch_id
+                LEFT JOIN dbo.SendMail_Branches branch ON branch.id=b.branch_id
+            ORDER BY COALESCE(b.completed_at,b.created_at),b.id";
         $stmt = self::statement($sql, $params);
         return array_map(static fn(array $row): array => $row + ['source'=>$key, 'channel'=>$s['channel']], $stmt->fetchAll());
     }

@@ -22,6 +22,7 @@ try {
     Run-Php 'integration.php'
     Run-Php 'pagination.php'
     Run-Php 'activity_performance.php'
+    Run-Php 'history_performance.php'
     Run-Php 'campaign_preparation.php'
     Run-Php 'edge_cases.php'
     Run-Php 'management_lists.php'
