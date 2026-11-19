@@ -82,7 +82,7 @@ try {
         }
         $template = $found;
     } else {
-        $sourceTemplates = InvoiceRepository::templates();
+        $sourceTemplates = InvoiceRepository::templates(true);
         if ($sourceId > 0) {
             $sourceTemplate = InvoiceRepository::findTemplate($sourceId);
             if (!$sourceTemplate) {

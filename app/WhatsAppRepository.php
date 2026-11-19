@@ -7,7 +7,7 @@ final class WhatsAppRepository
     public const SOURCE_CAMPAIGN = 'campaign';
     public const SOURCE_INVOICE = 'invoice';
 
-    public static function templates(string $sourceType = ''): array
+    public static function templates(string $sourceType = '', bool $approvedOnly = false): array
     {
         Schema::ensure();
         [$branchWhere, $branchParams] = BranchRepository::activeBranchWhere('t');
@@ -17,6 +17,10 @@ final class WhatsAppRepository
             self::assertSourceType($sourceType);
             $where[] = 't.category = :category';
             $params[':category'] = self::categoryForSource($sourceType);
+        }
+        if ($approvedOnly) {
+            $where[] = "UPPER(t.status) = 'APPROVED'";
+            $where[] = 't.is_active = 1';
         }
         $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
         $stmt = Database::pdo()->prepare(
@@ -28,7 +32,7 @@ final class WhatsAppRepository
 
     public static function readyTemplates(string $sourceType): array
     {
-        return array_values(array_filter(self::templates($sourceType), static function (array $template): bool {
+        return array_values(array_filter(self::templates($sourceType, true), static function (array $template): bool {
             return self::isTemplateReady($template);
         }));
     }
@@ -574,7 +578,11 @@ final class WhatsAppRepository
             $params += $branchParams;
         }
         $stmt = Database::pdo()->prepare(
-            "SELECT TOP $limit b.id, b.branch_id, b.source_type, b.template_id, b.name, b.status,
+            "WITH selected_batches AS (
+                SELECT TOP $limit b.id FROM dbo.SendMail_WhatsAppBatches b
+                INNER JOIN dbo.SendMail_WhatsAppTemplates t ON t.id=b.template_id
+                WHERE " . implode(' AND ', $where) . " ORDER BY b.created_at DESC,b.id DESC)
+             SELECT b.id, b.branch_id, b.source_type, b.template_id, b.name, b.status,
                     b.total_queued, b.total_sent, b.total_failed, b.total_delivered, b.total_read,
                     b.created_at, b.started_at, b.completed_at, t.name AS template_name, t.language,
                     MIN(q.scheduled_at) AS first_scheduled_at,
@@ -583,13 +591,13 @@ final class WhatsAppRepository
                     SUM(CASE WHEN q.status = 'sending' THEN 1 ELSE 0 END) AS sending_count,
                     SUM(CASE WHEN q.status = 'skipped' THEN 1 ELSE 0 END) AS skipped_count
              FROM dbo.SendMail_WhatsAppBatches b
+             INNER JOIN selected_batches selected ON selected.id=b.id
              INNER JOIN dbo.SendMail_WhatsAppTemplates t ON t.id = b.template_id
              LEFT JOIN dbo.SendMail_WhatsAppQueue q ON q.batch_id = b.id
-             WHERE " . implode(' AND ', $where) . '
              GROUP BY b.id, b.branch_id, b.source_type, b.template_id, b.name, b.status,
                       b.total_queued, b.total_sent, b.total_failed, b.total_delivered, b.total_read,
                       b.created_at, b.started_at, b.completed_at, t.name, t.language
-             ORDER BY b.created_at DESC, b.id DESC'
+             ORDER BY b.created_at DESC, b.id DESC"
         );
         $stmt->execute($params);
         return $stmt->fetchAll();

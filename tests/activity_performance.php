@@ -74,6 +74,7 @@ try {
         $stmt->execute($params);
         $expected = $stmt->fetchAll();
         check(canonical(ActivityRepository::batches($filters)) === canonical($expected), 'Lotes exactos y limite de 100');
+        check(canonical(ActivityRepository::batches($filters,8)) === canonical(array_slice($expected,0,8)), 'Inicio carga solo ocho lotes');
         $stmt = $pdo->prepare(referenceSource()."SELECT
             SUM(CASE WHEN status='pending' AND scheduled_at<=SYSDATETIME() AND batch_status IN ('queued','processing') THEN 1 ELSE 0 END) AS pending,
             SUM(CASE WHEN status='pending' AND scheduled_at>SYSDATETIME() AND batch_status IN ('queued','processing') THEN 1 ELSE 0 END) AS scheduled,

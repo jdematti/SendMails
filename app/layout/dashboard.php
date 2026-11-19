@@ -3,7 +3,7 @@ $pageTitle = 'Inicio';
 $pageSubtitle = 'Actividad de la sucursal y próximos envíos.';
 $filters = ActivityRepository::filters([]);
 $summary = ActivityRepository::summary($filters);
-$batches = array_slice(ActivityRepository::batches($filters), 0, 8);
+$batches = ActivityRepository::batches($filters, 8);
 require __DIR__ . '/header.php';
 ?>
 <section class="quick-start" aria-label="Empezar un envío">

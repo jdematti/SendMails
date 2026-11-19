@@ -110,8 +110,9 @@ final class ActivityRepository
         return array_map('intval', $stmt->fetch() ?: []);
     }
 
-    public static function batches(array $filters): array
+    public static function batches(array $filters, int $limit = 100): array
     {
+        $limit = max(1, min($limit, 100));
         $queries = [];
         foreach (self::sources($filters) as [$queue, $batch, $batchKey, $kind, $channel]) {
             $where = 'branch_id=' . (int) $filters['branch'];
@@ -127,7 +128,7 @@ final class ActivityRepository
                     FROM dbo.$queue WHERE $where GROUP BY branch_id, $batchKey) q
                 INNER JOIN dbo.$batch b ON b.id=q.batch_id AND b.branch_id=q.branch_id $kindFilter";
         }
-        $stmt = Database::pdo()->prepare('SELECT TOP 100 * FROM (' . implode(' UNION ALL ', $queries) . ') batches ORDER BY created_at DESC,batch_id DESC');
+        $stmt = Database::pdo()->prepare("SELECT TOP $limit * FROM (" . implode(' UNION ALL ', $queries) . ') batches ORDER BY created_at DESC,batch_id DESC');
         $stmt->execute();
         return $stmt->fetchAll();
     }

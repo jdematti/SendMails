@@ -8,7 +8,7 @@ final class UserRepository
     {
         Schema::ensure();
         return Database::pdo()
-            ->query('SELECT * FROM dbo.SendMail_Users ORDER BY is_active DESC, role ASC, username ASC')
+            ->query('SELECT id, username, full_name, email, role, is_active FROM dbo.SendMail_Users ORDER BY is_active DESC, role ASC, username ASC')
             ->fetchAll();
     }
 

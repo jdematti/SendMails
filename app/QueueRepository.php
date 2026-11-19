@@ -355,7 +355,11 @@ final class QueueRepository
         $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
         $stmt = Database::pdo()->prepare(
-            "SELECT TOP $limit
+            "WITH selected_batches AS (
+                SELECT TOP $limit c.id FROM dbo.SendMail_Campaigns c
+                INNER JOIN dbo.SendMail_Templates t ON t.id=c.template_id AND t.branch_id=c.branch_id
+                $whereSql ORDER BY c.created_at DESC,c.id DESC)
+             SELECT
                 c.id,
                 c.name,
                 c.send_mode,
@@ -377,9 +381,9 @@ final class QueueRepository
                 COALESCE(SUM(CASE WHEN q.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
                 COALESCE(SUM(CASE WHEN q.status = 'skipped' THEN 1 ELSE 0 END), 0) AS skipped_count
              FROM dbo.SendMail_Campaigns c
+             INNER JOIN selected_batches selected ON selected.id=c.id
              INNER JOIN dbo.SendMail_Templates t ON t.id = c.template_id AND t.branch_id = c.branch_id
              LEFT JOIN dbo.SendMail_Queue q ON q.campaign_id = c.id AND q.branch_id = c.branch_id
-             $whereSql
              GROUP BY
                 c.id,
                 c.name,

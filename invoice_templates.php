@@ -11,7 +11,7 @@ $error = '';
 
 try {
     Schema::ensure();
-    $templates = InvoiceRepository::templates();
+    $templates = InvoiceRepository::templates(true);
 } catch (Throwable $e) {
     $error = $e->getMessage();
 }

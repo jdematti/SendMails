@@ -15,7 +15,7 @@ final class InvoiceRepository
         Schema::ensure();
         [$branchWhere, $branchParams] = BranchRepository::activeBranchWhere();
         $whereSql = $branchWhere !== '' ? 'WHERE ' . $branchWhere : '';
-        $columns = $metadataOnly ? "id, name, subject, is_active" : "*";
+        $columns = $metadataOnly ? "id, name, subject, is_active, from_email, test_mode, created_at" : "*";
         $stmt = Database::pdo()->prepare(
             "SELECT $columns FROM dbo.SendMail_InvoiceTemplates
              $whereSql
@@ -682,7 +682,11 @@ final class InvoiceRepository
         $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
         $stmt = Database::pdo()->prepare(
-            "SELECT TOP $limit
+            "WITH selected_batches AS (
+                SELECT TOP $limit b.id FROM dbo.SendMail_InvoiceBatches b
+                INNER JOIN dbo.SendMail_InvoiceTemplates t ON t.id=b.template_id
+                $whereSql ORDER BY b.created_at DESC,b.id DESC)
+             SELECT
                 b.id,
                 b.name,
                 b.due_date,
@@ -704,9 +708,9 @@ final class InvoiceRepository
                 COALESCE(SUM(CASE WHEN q.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
                 COALESCE(SUM(CASE WHEN q.status = 'skipped' THEN 1 ELSE 0 END), 0) AS skipped_count
              FROM dbo.SendMail_InvoiceBatches b
+             INNER JOIN selected_batches selected ON selected.id=b.id
              INNER JOIN dbo.SendMail_InvoiceTemplates t ON t.id = b.template_id
              LEFT JOIN dbo.SendMail_InvoiceQueue q ON q.batch_id = b.id
-             $whereSql
              GROUP BY
                 b.id,
                 b.name,
