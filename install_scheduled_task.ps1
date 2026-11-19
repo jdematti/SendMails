@@ -20,7 +20,7 @@ $argument = '-NoProfile -ExecutionPolicy Bypass -File "' + $RunnerPath + '" -Lim
 
 $action = New-ScheduledTaskAction -Execute $powershellExe -Argument $argument -WorkingDirectory $ProjectDir
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) -RepetitionDuration (New-TimeSpan -Days 3650)
-$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 Register-ScheduledTask `
     -TaskName $TaskName `
@@ -33,5 +33,5 @@ Register-ScheduledTask `
 
 Write-Output "Tarea '$TaskName' creada/actualizada."
 Write-Output "Intervalo: cada $IntervalMinutes minutos."
-Write-Output "Limite por corrida: $Limit."
+Write-Output 'Procesamiento hasta completar pendientes, sin limite de tiempo.'
 Write-Output "Script: $RunnerPath"

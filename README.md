@@ -218,7 +218,7 @@ cd C:\xampp\htdocs\SendMails
 powershell -ExecutionPolicy Bypass -File .\install_scheduled_task.ps1 -IntervalMinutes 1 -Limit 1000
 ```
 
-La tarea se registra con permisos administrativos bajo SYSTEM y funciona sin sesion iniciada. Ejecuta `run_worker.ps1`, que llama a `worker.php` durante un maximo aproximado de 55 segundos por corrida (termina el envio en curso), escribe logs en `storage\logs` y evita corridas simultaneas. El estado reciente se guarda en `storage/worker-status.json` y se muestra en Inicio y Seguimiento.
+La tarea se registra con permisos administrativos bajo SYSTEM y funciona sin sesion iniciada. Ejecuta `run_worker.ps1`, que llama a `worker.php --drain` hasta agotar los pendientes disponibles de las sucursales habilitadas, respetando los intervalos por sucursal y canal. En este modo no se aplica `-Limit` ni un limite de tiempo. Los pendientes programados para el futuro se procesan en una proxima ejecucion. El bloqueo exclusivo se conserva durante toda la corrida; la tarea usa `IgnoreNew` y no tiene limite de duracion. Mantenimiento o detener una sucursal siguen interrumpiendo el procesamiento despues del envio en curso. Es necesario volver a ejecutar `install_scheduled_task.ps1` como administrador en el servidor para quitar el anterior limite de 10 minutos. Se escriben logs en `storage\logs`; el estado reciente se guarda en `storage/worker-status.json` y se muestra en Inicio y Seguimiento. Para ejecuciones manuales acotadas siguen disponibles `php worker.php --limit=100 --max-seconds=55`.
 
 Para ejecutar una corrida manual:
 

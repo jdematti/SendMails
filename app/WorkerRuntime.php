@@ -111,7 +111,7 @@ final class WorkerRuntime
         $originalBranch = $_SESSION['branch_id'] ?? null;
         $exhausted = [];
         try {
-            while ($result['processed'] < $limit && microtime(true) - self::$started < $maxSeconds) {
+            while (($limit <= 0 || $result['processed'] < $limit) && ($maxSeconds <= 0 || microtime(true) - self::$started < $maxSeconds)) {
                 if (is_file(STORAGE_PATH . '/maintenance.flag')) break;
                 $waiting = false; $processedInCycle = 0;
                 foreach ($branches as $branch) {
@@ -127,7 +127,7 @@ final class WorkerRuntime
                         continue;
                     }
                     foreach (['email', 'whatsapp'] as $channel) {
-                        if ($result['processed'] >= $limit || microtime(true) - self::$started >= $maxSeconds || is_file(STORAGE_PATH . '/maintenance.flag')) break 2;
+                        if (($limit > 0 && $result['processed'] >= $limit) || ($maxSeconds > 0 && microtime(true) - self::$started >= $maxSeconds) || is_file(STORAGE_PATH . '/maintenance.flag')) break 2;
                         $key = $branch . ':' . $channel;
                         if (isset($exhausted[$key])) continue;
                         if ((int) (self::$state['next_by_channel'][$key] ?? 0) > time()) { $waiting = true; continue; }

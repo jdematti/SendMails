@@ -32,9 +32,10 @@ require __DIR__.'/../app/WorkerRuntime.php';
 function verify(bool $condition,string $message):void { if(!$condition)throw new RuntimeException($message); }
 try {
     verify(WorkerRuntime::acquire(),'Adquirir bloqueo');
-    $result=WorkerRuntime::process(4,10);
+    $result=WorkerRuntime::process(0,0);
     WorkerRuntime::release('idle',$result['processed']);
     verify($result['sent']===4,'Procesamiento completo');
+    verify(UnifiedQueueService::$remaining === [1=>0,2=>0], 'Sin limites termina al agotar pendientes');
     verify(array_column(UnifiedQueueService::$sent,'branch')===[1,2,1,2],'Alternancia de sucursales');
     verify(UnifiedQueueService::$sent[2]['at']-UnifiedQueueService::$sent[0]['at']>=2,'Intervalo sucursal 1');
     verify(UnifiedQueueService::$sent[3]['at']-UnifiedQueueService::$sent[1]['at']>=2,'Intervalo sucursal 2');

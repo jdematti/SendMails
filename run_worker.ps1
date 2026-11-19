@@ -30,8 +30,8 @@ function Write-WorkerLog {
 
 try {
     if (!(Test-Path -LiteralPath $WorkerPath)) { throw 'No se encontro worker.php' }
-    Write-WorkerLog "Iniciando worker. Limit=$Limit"
-    $output = & $PhpExe $WorkerPath "--limit=$Limit" "--max-seconds=55" 2>&1
+    Write-WorkerLog 'Iniciando worker. Hasta completar pendientes.'
+    $output = & $PhpExe $WorkerPath "--drain" 2>&1
     $exitCode = $LASTEXITCODE
     foreach ($line in $output) { Write-WorkerLog ([string]$line) }
     if ($exitCode -ne 0) { throw "El worker finalizo con codigo $exitCode" }

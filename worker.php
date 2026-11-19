@@ -3,9 +3,11 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 require __DIR__ . '/app/bootstrap.php';
 set_time_limit(0);
-$options = getopt('', ['limit::', 'max-seconds::']);
+$options = getopt('', ['limit::', 'max-seconds::', 'drain']);
 $limit = max(1, min(10000, (int) ($options['limit'] ?? 1000)));
 $seconds = max(10, min(3600, (int) ($options['max-seconds'] ?? 55)));
+// Drain keeps the same exclusive lock until all currently eligible queues are empty.
+if (array_key_exists('drain', $options)) { $limit = 0; $seconds = 0; }
 if (!WorkerRuntime::acquire()) { echo "Worker ocupado o mantenimiento activo.\n"; exit(0); }
 $status = 'idle'; $processed = 0;
 try {
