@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
+$requestStarted = microtime(true);
 require __DIR__ . '/app/bootstrap.php';
+$bootstrapFinished = microtime(true);
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 try {
@@ -33,6 +35,8 @@ try {
         case 'confirm': $result = ComposeService::confirm($kind, $id, $revision); break;
         default: throw new InvalidArgumentException('Accion invalida.');
     }
+    header(sprintf('Server-Timing: bootstrap;dur=%.1f, action;dur=%.1f',
+        ($bootstrapFinished - $requestStarted) * 1000, (microtime(true) - $bootstrapFinished) * 1000));
     echo json_encode(['ok' => true] + $result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     if (http_response_code() < 400) http_response_code(400);

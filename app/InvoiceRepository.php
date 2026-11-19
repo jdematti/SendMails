@@ -109,7 +109,7 @@ final class InvoiceRepository
         return (int) $stmt->fetchColumn();
     }
 
-    public static function search(string $dueDate, string $status, bool $includeSent, array $template, array $filters = [], int $limit = 250, string $channel = 'email', int $page = 1, bool $withTokens = true): array
+    public static function search(string $dueDate, string $status, bool $includeSent, array $template, array $filters = [], int $limit = 250, string $channel = 'email', int $page = 1, bool $withTokens = true, bool $withLinks = true): array
     {
         Schema::ensure();
         $channel = self::normalizeDeliveryChannel($channel);
@@ -145,13 +145,16 @@ final class InvoiceRepository
             $sql .= ' ORDER BY F.SNB, F.Id';
         }
 
+        if (isset($criteria['params'][':selected_ids_xml'])) {
+            $sql = self::selectionSqlPrefix() . $sql;
+        }
         $stmt = self::sourcePdo()->prepare($sql);
         $stmt->execute($criteria['params']);
         $rows = [];
         $index = 0;
         while ($row = $stmt->fetch()) {
             unset($row['page_row_number']);
-            $row = self::normalizeInvoiceRow($row, $template);
+            $row = self::normalizeInvoiceRow($row, $template, $withLinks);
             $hasEmail = filter_var((string) $row['email'], FILTER_VALIDATE_EMAIL) !== false;
             $hasPhone = trim((string) ($row['telefono_movil'] ?? '')) !== '';
             $row['valid_email'] = $hasEmail;
@@ -168,9 +171,13 @@ final class InvoiceRepository
     {
         Schema::ensure();
         $criteria = self::invoiceSearchCriteria($dueDate, $status, $includeSent, $filters, self::normalizeDeliveryChannel($channel), self::invoicePhoneExpression());
-        $stmt = self::sourcePdo()->prepare('SELECT CONVERT(nvarchar(80), F.Id) FROM FacturasTel F
+        $sql = 'SELECT CONVERT(nvarchar(80), F.Id) FROM FacturasTel F
             INNER JOIN clientes C ON C.OId COLLATE Modern_Spanish_CI_AS = F.IdCliente
-            WHERE ' . implode(' AND ', $criteria['where']) . ' ORDER BY F.SNB, F.Id');
+            WHERE ' . implode(' AND ', $criteria['where']) . ' ORDER BY F.SNB, F.Id';
+        if (isset($criteria['params'][':selected_ids_xml'])) {
+            $sql = self::selectionSqlPrefix() . $sql;
+        }
+        $stmt = self::sourcePdo()->prepare($sql);
         $stmt->execute($criteria['params']);
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
@@ -186,6 +193,9 @@ final class InvoiceRepository
                 INNER JOIN clientes C ON C.OId COLLATE Modern_Spanish_CI_AS = F.IdCliente
                 WHERE ' . implode(' AND ', $criteria['where']);
 
+        if (isset($criteria['params'][':selected_ids_xml'])) {
+            $sql = self::selectionSqlPrefix() . $sql;
+        }
         $stmt = self::sourcePdo()->prepare($sql);
         $stmt->execute($criteria['params']);
         return (int) $stmt->fetchColumn();
@@ -256,6 +266,19 @@ final class InvoiceRepository
             }
             $where[] = $keys ? 'CONVERT(nvarchar(80), F.Id) IN (' . implode(',', $keys) . ')' : '1=0';
         }
+        if (isset($filters['selected_ids'])) {
+            // One XML parameter avoids SQL Server's 2100-parameter limit and repeated
+            // scans of the source tables for every 500 selected invoices (SQL 2008+).
+            $ids = array_values(array_unique(array_map('strval', $filters['selected_ids'])));
+            if (count($ids) > 20000) throw new InvalidArgumentException('La seleccion supera el limite permitido.');
+            $xml = '<ids>';
+            foreach ($ids as $id) {
+                if (mb_strlen($id) > 80 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $id)) throw new InvalidArgumentException('ID de factura invalido.');
+                $xml .= '<id>' . htmlspecialchars($id, ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</id>';
+            }
+            $params[':selected_ids_xml'] = $xml . '</ids>';
+            $where[] = 'CONVERT(nvarchar(80), F.Id) IN (SELECT invoice_id FROM @selected_invoice_ids)';
+        }
         $snb = trim((string) ($filters['snb'] ?? ''));
         if ($snb !== '') {
             $where[] = 'LTRIM(RTRIM(F.SNB)) LIKE :snb';
@@ -284,6 +307,18 @@ final class InvoiceRepository
             'where' => $where,
             'params' => $params,
         ];
+    }
+
+    private static function selectionSqlPrefix(): string
+    {
+        // Materialize once: XML methods inside the invoice query can be evaluated
+        // repeatedly by older SQL Server query plans.
+        return "SET NOCOUNT ON;
+            DECLARE @selected_xml xml = CAST(:selected_ids_xml AS xml);
+            DECLARE @selected_invoice_ids TABLE (invoice_id nvarchar(80) PRIMARY KEY);
+            INSERT INTO @selected_invoice_ids(invoice_id)
+                SELECT DISTINCT selected.node.value('.', 'nvarchar(80)')
+                FROM @selected_xml.nodes('/ids/id') selected(node); ";
     }
 
     public static function findBySelectionTokens(array $tokens): array
@@ -927,12 +962,12 @@ final class InvoiceRepository
         ];
     }
 
-    private static function normalizeInvoiceRow(array $row, array $template): array
+    private static function normalizeInvoiceRow(array $row, array $template, bool $withLinks = true): array
     {
         $invoiceId = trim((string) ($row['invoice_id'] ?? ''));
         $web = (string) ($template['web'] ?? '');
         $locPrefix = (string) ($template['loc_prefix'] ?? '');
-        $url = InvoiceCrypto::invoiceUrl($web, $locPrefix, $invoiceId);
+        $url = $withLinks ? InvoiceCrypto::invoiceUrl($web, $locPrefix, $invoiceId) : '';
 
         return [
             'branch_id' => (int) ($row['branch_id'] ?? 0),

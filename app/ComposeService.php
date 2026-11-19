@@ -32,9 +32,8 @@ final class ComposeService
         if ($input['due_date'] === '') return $idsOnly ? [] : ['rows' => [], 'total' => 0, 'page' => 1, 'size' => 50];
         $filters = self::invoiceFilters($input);
         if ($idsOnly) return InvoiceRepository::matchingIds($input['due_date'], $input['status'], $input['include_sent'], $filters, $input['channel']);
-        $template = InvoiceRepository::findTemplate($input['template_id']);
-        if (!$template) throw new RuntimeException('Selecciona una plantilla de facturas para preparar el enlace.');
-        $rows = InvoiceRepository::search($input['due_date'], $input['status'], $input['include_sent'], $template, $filters, 50, $input['channel'], $page, false);
+        // The recipient list does not display a message or invoice links.
+        $rows = InvoiceRepository::search($input['due_date'], $input['status'], $input['include_sent'], [], $filters, 50, $input['channel'], $page, false, false);
         $total = InvoiceRepository::searchTotal($input['due_date'], $input['status'], $input['include_sent'], $filters, $input['channel']);
         return ['rows' => $rows, 'total' => $total, 'page' => $page, 'size' => 50];
     }
@@ -52,12 +51,9 @@ final class ComposeService
             }
             return $rows;
         }
-        $rows = [];
-        foreach (array_chunk($input['ids'], 500) as $ids) {
-            $filters = ['ids' => $ids];
-            array_push($rows, ...InvoiceRepository::search($input['due_date'], $input['status'], $input['include_sent'], $template, $filters, 0, $input['channel'], 1, false));
-        }
-        return $rows;
+        if (!$input['ids']) return [];
+        return InvoiceRepository::search($input['due_date'], $input['status'], $input['include_sent'], $template,
+            ['selected_ids' => $input['ids']], 0, $input['channel'], 1, false);
     }
 
     public static function classify(string $kind, array $rows, string $channel, array $blockedEmails, array $blockedPhones, string $country = '54'): array

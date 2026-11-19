@@ -18,6 +18,7 @@ try {
     $created=$true
     $env:SENDMAILS_TEST_DATABASE=$testName
     Run-Php 'campaign_attachments_test.php'
+    Run-Php 'invoice_selection.php'
     Run-Php 'integration.php'
     Run-Php 'pagination.php'
     Run-Php 'edge_cases.php'

@@ -39,6 +39,14 @@ try {
     check(isset($filteredRows[0]['selection_token']), 'Mantener seleccion por token para consumidores anteriores');
     $unpaged = InvoiceRepository::search('2026-09-30', 'I', true, $template, $filters, 0, 'email', 1, false);
     check(array_column($unpaged, 'invoice_id') === $filteredIds, 'Conservar exportacion y revision sin limite');
+    $selected = array_merge(array_slice($allIds, 0, 700), array_slice($allIds, 1500, 700));
+    $selectedRows = InvoiceRepository::search('2026-09-30', 'I', true, $template, ['selected_ids'=>$selected], 0, 'email', 1, false);
+    check(array_column($selectedRows, 'invoice_id') === $selected, 'Seleccion de mas de 500 facturas en una consulta');
+    check($selectedRows[0]['invoice_url'] !== '', 'Conservar enlaces para revision y envio');
+    $input = ComposeService::input(['due_date'=>'2026-09-30', 'status'=>'I', 'include_sent'=>true, 'channel'=>'email']);
+    $listed = ComposeService::search('invoice', $input);
+    check(count($listed['rows']) === 50 && $listed['total'] === 4000, 'Listado sin cargar plantilla');
+    check($listed['rows'][0]['invoice_url'] === '', 'Listado sin generar enlaces innecesarios');
 
     $activityFilters = ActivityRepository::filters(['kind'=>'campaign', 'channel'=>'email']);
     $first = ActivityRepository::page($activityFilters, 1);
@@ -48,6 +56,17 @@ try {
     check(!array_intersect(array_column($first['rows'],'id'), array_column($second['rows'],'id')), 'Seguimiento sin filas repetidas entre paginas');
     check($second['rows'] === ActivityRepository::page($activityFilters, 2)['rows'], 'Orden estable al recargar');
     check(ActivityRepository::page($activityFilters, (int) ceil($first['total']/50)+1)['rows'] === [], 'Pagina posterior al ultimo registro');
+    $reviewInput = ComposeService::input(['name'=>'Facturas seleccionadas', 'channel'=>'email',
+        'due_date'=>'2026-09-30', 'status'=>'I', 'include_sent'=>true, 'scheduled_at'=>'2026-11-19T12:00',
+        'template_id'=>$template['id'], 'ids'=>$selected]);
+    $started = microtime(true);
+    $review = ComposeService::review('invoice', $reviewInput);
+    check($review['counts']['email'] === count($selected), 'Revision completa de facturas seleccionadas');
+    $draft = DraftRepository::save(0, 'invoice', $reviewInput['name'], ['input'=>$reviewInput, 'review'=>$review], 0, 'review');
+    $confirmed = ComposeService::confirm('invoice', $draft['id'], $draft['revision']);
+    $batchId = (int) $confirmed['links'][0]['id'];
+    check((int) $pdo->query("SELECT COUNT(*) FROM dbo.SendMail_InvoiceQueue WHERE batch_id=$batchId")->fetchColumn() === count($selected), 'Confirmacion sin perder facturas');
+    echo 'FACTURAS: revision y confirmacion de '.count($selected).' en '.round((microtime(true)-$started)*1000)." ms, base temporal local.\n";
     echo "PAGINATION OK: compatibilidad 100 en base temporal, 4000 clientes/facturas, paginas, filtros, seleccion total y seguimiento. Sin envios externos.\n";
 } finally {
     $pdo->exec("ALTER DATABASE [$database] SET COMPATIBILITY_LEVEL = $compatibility");
