@@ -67,7 +67,7 @@ final class ClientRepository
 
     public static function page(string $term, array $plans, int $page = 1, bool $idsOnly = false): array
     {
-        $select = self::selectSql();
+        $select = self::selectSql(true);
         $sql = 'WITH clients AS (SELECT ' . $select . ' FROM ' . self::sourceSql() . ') ';
         $where = ["(email IS NOT NULL OR telefono_movil IS NOT NULL)"];
         $params = [];
@@ -130,11 +130,28 @@ final class ClientRepository
         }
 
         if (count($oids) > 500) {
-            $rows = [];
-            foreach (array_chunk(array_values(array_unique($oids)), 500) as $chunk) {
-                array_push($rows, ...self::findByOids($chunk));
+            // Materialize the selection once instead of scanning the source once
+            // per 500 clients. Works below SQL Server compatibility level 110.
+            $xml = '<ids>';
+            foreach (array_unique($oids) as $oid) {
+                if (mb_strlen($oid) > 4000 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $oid)) {
+                    throw new InvalidArgumentException('ID de cliente invalido.');
+                }
+                $xml .= '<id>' . htmlspecialchars($oid, ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</id>';
             }
-            return $rows;
+            $map = self::columnMap();
+            $identifier = self::trimmedExpression($map['oid']);
+            $sql = "SET NOCOUNT ON;
+                DECLARE @selected_xml xml = CAST(:selected_ids_xml AS xml);
+                DECLARE @selected_clients TABLE (oid nvarchar(4000));
+                INSERT INTO @selected_clients(oid)
+                    SELECT DISTINCT selected.node.value('.', 'nvarchar(4000)')
+                    FROM @selected_xml.nodes('/ids/id') selected(node);
+                SELECT " . self::selectSql() . ' FROM ' . self::sourceSql()
+                . ' WHERE ' . $identifier . ' IN (SELECT oid FROM @selected_clients) ORDER BY razon_social, codigo_cliente';
+            $stmt = self::pdo()->prepare($sql);
+            $stmt->execute([':selected_ids_xml'=>$xml . '</ids>']);
+            return $stmt->fetchAll();
         }
         $placeholders = [];
         $params = [];
@@ -263,12 +280,12 @@ final class ClientRepository
         return self::quoteName($source['schema']) . '.' . self::quoteName($source['table']);
     }
 
-    private static function selectSql(): string
+    private static function selectSql(bool $listOnly = false): string
     {
         $map = self::columnMap();
         $branchId = (int) (BranchRepository::currentId() ?? 0);
 
-        return implode(', ', [
+        $columns = [
             'CAST(' . $branchId . ' AS int) AS branch_id',
             self::trimmedExpression($map['oid']) . ' AS oid',
             self::trimmedExpression($map['codigo_cliente']) . ' AS codigo_cliente',
@@ -276,9 +293,12 @@ final class ClientRepository
             self::nullableTrimmedExpression($map['plan_contratado']) . ' AS plan_contratado',
             self::nullableTrimmedExpression($map['email']) . ' AS email',
             self::nullableTrimmedExpression($map['telefono_movil']) . ' AS telefono_movil',
-            self::nullableTrimmedExpression($map['localidad']) . ' AS localidad',
-            self::nullableTrimmedExpression($map['provincia']) . ' AS provincia',
-        ]);
+        ];
+        if (!$listOnly) {
+            $columns[] = self::nullableTrimmedExpression($map['localidad']) . ' AS localidad';
+            $columns[] = self::nullableTrimmedExpression($map['provincia']) . ' AS provincia';
+        }
+        return implode(', ', $columns);
     }
 
     private static function columnMap(): array

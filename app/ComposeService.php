@@ -115,10 +115,7 @@ final class ComposeService
         $blockedEmails = [];
         if ($kind === 'campaign' && $input['channel'] !== 'whatsapp') {
             $emails = array_column($rows, 'email');
-            $blockedEmails = UnsubscribeRepository::statusByEmail($emails);
-            foreach (EmailExclusionRepository::statusByEmail($emails) as $email => $blocked) {
-                $blockedEmails[$email] = $blocked || ($blockedEmails[$email] ?? false);
-            }
+            $blockedEmails = EmailExclusionRepository::campaignBlockedEmails($emails, (int) BranchRepository::currentId());
         }
         $result = self::classify($kind, $rows, $input['channel'], $blockedEmails, $blockedPhones, (string) ($config['country_code'] ?? '54'));
         if (($input['channel'] !== 'whatsapp' && !$result['email_rows']) || ($input['channel'] !== 'email' && !$result['phone_rows'])) {

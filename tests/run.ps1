@@ -21,6 +21,7 @@ try {
     Run-Php 'invoice_selection.php'
     Run-Php 'integration.php'
     Run-Php 'pagination.php'
+    Run-Php 'campaign_preparation.php'
     Run-Php 'edge_cases.php'
     Run-Php 'management_lists.php'
     Run-Php 'whatsapp_events.php'

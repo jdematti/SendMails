@@ -38,6 +38,37 @@ final class EmailExclusionRepository
         return $status;
     }
 
+    public static function campaignBlockedEmails(array $emails, int $branchId): array
+    {
+        if ($branchId <= 0) throw new InvalidArgumentException('Selecciona una sucursal.');
+        $emails = array_values(array_unique(array_filter(array_map(
+            static fn($email): string => UnsubscribeRepository::normalizeEmail(is_scalar($email) ? (string) $email : ''), $emails
+        ))));
+        if (!$emails) return [];
+        Schema::ensure();
+        $xml = '<emails>';
+        foreach ($emails as $email) {
+            if (mb_strlen($email) > 320 || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $email)) continue;
+            $xml .= '<email>' . htmlspecialchars($email, ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</email>';
+        }
+        // Read current unsubscribes and global exclusions together, without caching
+        // or sending hundreds of separate parameters for each selection chunk.
+        $stmt = Database::pdo()->prepare("SET NOCOUNT ON;
+            DECLARE @emails_xml xml = CAST(:emails_xml AS xml);
+            DECLARE @emails TABLE (email nvarchar(320) PRIMARY KEY);
+            INSERT INTO @emails(email)
+                SELECT DISTINCT selected.node.value('.', 'nvarchar(320)')
+                FROM @emails_xml.nodes('/emails/email') selected(node);
+            SELECT u.email_normalized FROM dbo.SendMail_Unsubscribes u
+                INNER JOIN @emails selected ON selected.email=u.email_normalized
+                WHERE u.branch_id=:branch_id
+            UNION
+            SELECT e.email_normalized FROM dbo.SendMail_EmailExclusions e
+                INNER JOIN @emails selected ON selected.email=e.email_normalized");
+        $stmt->execute([':emails_xml'=>$xml . '</emails>', ':branch_id'=>$branchId]);
+        return array_fill_keys($stmt->fetchAll(PDO::FETCH_COLUMN), true);
+    }
+
     public static function filterAllowedRecipients(array $recipients): array
     {
         $emails = [];

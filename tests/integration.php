@@ -35,7 +35,7 @@ $page2 = ClientRepository::page('', [], 2);
 check(count($page1['rows'])===50 && $page1['total']===4000, 'Paginacion 4000 clientes');
 check(!array_intersect(array_column($page1['rows'],'oid'),array_column($page2['rows'],'oid')), 'Paginas sin solapamientos');
 check(ClientRepository::page('', ['Plan A'])['total']===2000, 'Filtro de planes');
-check(count(ClientRepository::findByOids(array_map('strval',range(1,4000))))===4000, 'Seleccion dividida bajo 2100 parametros');
+check(count(ClientRepository::findByOids(array_map('strval',range(1,4000))))===4000, 'Seleccion completa sin superar 2100 parametros');
 echo "OK busqueda y seleccion de 4000 clientes\n";
 $invoiceTemplate = InvoiceRepository::defaultTemplate();
 $invoicePage = InvoiceRepository::search('2026-09-30','I',false,$invoiceTemplate,[],50,'email',2,false);
