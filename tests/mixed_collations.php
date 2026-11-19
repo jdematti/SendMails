@@ -41,5 +41,23 @@ try {
         'template_id'=>TemplateRepository::all(true)[0]['id'],'ids'=>$ids]);
     $review=ComposeService::review('campaign',$input);
     check($review['counts']['email']===998 && $review['counts']['email_excluded']===2,'Revision completa con intercalaciones mixtas');
+    $pdo->exec("ALTER TABLE dbo.SendMail_InvoiceQueue ALTER COLUMN client_name nvarchar(250) COLLATE $other NULL;
+        ALTER TABLE dbo.SendMail_InvoiceQueue ALTER COLUMN email_to nvarchar(320) COLLATE $other NOT NULL;
+        ALTER TABLE dbo.SendMail_InvoiceQueue ALTER COLUMN last_error nvarchar(max) COLLATE $other NULL;
+        ALTER TABLE dbo.SendMail_WhatsAppBatches DROP CONSTRAINT CK_SendMail_WhatsAppBatches_source;
+        ALTER TABLE dbo.SendMail_WhatsAppBatches ALTER COLUMN source_type nvarchar(20) COLLATE $other NOT NULL;
+        ALTER TABLE dbo.SendMail_WhatsAppBatches ADD CONSTRAINT CK_SendMail_WhatsAppBatches_source CHECK(source_type IN ('campaign','invoice'));
+        ALTER TABLE dbo.SendMail_WhatsAppBatches ALTER COLUMN name nvarchar(180) COLLATE $other NOT NULL;
+        INSERT INTO dbo.SendMail_WhatsAppBatches(branch_id,source_type,template_id,name,status)
+            VALUES(1,'campaign',1,'Intercalacion WhatsApp','queued');
+        DECLARE @batch int=SCOPE_IDENTITY();
+        INSERT INTO dbo.SendMail_WhatsAppQueue(branch_id,batch_id,template_id,phone_to,status)
+            VALUES(1,@batch,1,'5491100000001','pending');");
+    $filters=ActivityRepository::filters([]);
+    check(count(ActivityRepository::page($filters)['rows'])>0,'Pagina unificada con columnas de distinta intercalacion');
+    check(ActivityRepository::batches($filters)!==[],'Lotes unificados con nombres y tipos de distinta intercalacion');
+    check(ActivityRepository::summary($filters)['pending']>0,'Resumen unificado');
+    $waFilters=ActivityRepository::filters(['kind'=>'campaign','channel'=>'whatsapp']);
+    check(count(ActivityRepository::page($waFilters)['rows'])===1,'Cruce del tipo WhatsApp con tabla auxiliar de paginacion');
     echo "COLLATIONS OK: clientes, facturas, bajas, exclusiones y revision con Modern_Spanish y SQL_Latin1_General_CP850. Base temporal; sin envios.\n";
 } finally { if($pdo->inTransaction())$pdo->rollBack(); }

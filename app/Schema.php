@@ -371,7 +371,7 @@ final class Schema
                 FROM dbo.SendMail_InvoiceQueue q
                 INNER JOIN @legacy_batches b ON b.template_id = q.template_id
                     AND ((b.due_date = q.due_date) OR (b.due_date IS NULL AND q.due_date IS NULL))
-                    AND ISNULL(b.due_date_label, N'') = ISNULL(q.due_date_label, N'')
+                    AND ISNULL(b.due_date_label, N'') COLLATE DATABASE_DEFAULT = ISNULL(q.due_date_label, N'')
                 WHERE q.batch_id IS NULL;
               END",
             "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_SendMail_InvoiceLog_Created' AND object_id = OBJECT_ID('dbo.SendMail_InvoiceLog'))

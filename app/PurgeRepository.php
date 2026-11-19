@@ -50,7 +50,7 @@ final class PurgeRepository
     private static function relatedLogs(array $source, string $hint = ''): string
     {
         $queue = $source['queue']; $foreign = $source['foreign']; $log = $source['log'];
-        $link = $source['channel'] === 'whatsapp' ? 'l.provider_message_id=q.provider_message_id' : 'l.queue_id=q.id';
+        $link = $source['channel'] === 'whatsapp' ? 'l.provider_message_id COLLATE DATABASE_DEFAULT=q.provider_message_id' : 'l.queue_id=q.id';
         $linked = "SELECT l.id,l.created_at FROM dbo.$queue q$hint INNER JOIN dbo.$log l$hint ON $link
             WHERE q.$foreign=b.id AND q.branch_id=b.branch_id AND (l.branch_id=b.branch_id OR l.branch_id IS NULL)";
         if ($source['kind'] !== 'campaign') return $linked;
@@ -154,7 +154,7 @@ final class PurgeRepository
                 if ($s['kind'] === 'campaign') {
                     $deletedLogs += self::statement("DELETE FROM dbo.$log WHERE campaign_id=:id AND (branch_id=:branch OR branch_id IS NULL)", $params)->rowCount();
                 }
-                $link = $s['channel'] === 'whatsapp' ? 'l.provider_message_id=q.provider_message_id' : 'l.queue_id=q.id';
+                $link = $s['channel'] === 'whatsapp' ? 'l.provider_message_id COLLATE DATABASE_DEFAULT=q.provider_message_id' : 'l.queue_id=q.id';
                 $deletedLogs += self::statement("DELETE l FROM dbo.$log l INNER JOIN dbo.$queue q ON $link
                     WHERE q.$foreign=:id AND q.branch_id=:branch AND (l.branch_id=q.branch_id OR l.branch_id IS NULL)", $params)->rowCount();
                 if ($deletedLogs !== (int) $row['records']) throw new RuntimeException('Los registros cambiaron durante la purga. La operación se revirtió.');

@@ -7,19 +7,21 @@ final class ActivityRepository
     {
         $queries = [];
         foreach (self::sources($filters) as [$queue, $batch, $batchKey, $kind, $channel, $recipient, $isTest]) {
-            $columns = "q.branch_id, q.$batchKey AS batch_id, $kind AS kind, '$channel' AS channel, q.status";
+            $columns = "q.branch_id, q.$batchKey AS batch_id, $kind COLLATE DATABASE_DEFAULT AS kind,
+                '$channel' COLLATE DATABASE_DEFAULT AS channel, q.status COLLATE DATABASE_DEFAULT AS status";
             if ($projection === 'keys') {
                 $columns .= ', q.id, q.created_at';
             } elseif ($projection === 'summary') {
-                $columns .= ", q.scheduled_at, b.status AS batch_status, $isTest AS is_test,
+                $columns .= ", q.scheduled_at, b.status COLLATE DATABASE_DEFAULT AS batch_status, $isTest AS is_test,
                     CASE WHEN q.last_error IS NOT NULL THEN 1 ELSE 0 END AS attention";
             } else {
-                $columns .= ", q.id, b.name, b.status AS batch_status, q.client_name, q.$recipient AS recipient,
-                    q.scheduled_at, q.created_at, q.last_error, $isTest AS is_test";
+                $columns .= ", q.id, b.name COLLATE DATABASE_DEFAULT AS name, b.status COLLATE DATABASE_DEFAULT AS batch_status,
+                    q.client_name COLLATE DATABASE_DEFAULT AS client_name, q.$recipient COLLATE DATABASE_DEFAULT AS recipient,
+                    q.scheduled_at, q.created_at, q.last_error COLLATE DATABASE_DEFAULT AS last_error, $isTest AS is_test";
             }
             $sql = "SELECT $columns FROM dbo.$queue q
                 INNER JOIN dbo.$batch b ON b.id=q.$batchKey AND b.branch_id=q.branch_id";
-            if ($pageOnly) $sql .= " INNER JOIN @activity_page p ON p.id=q.id AND p.branch_id=q.branch_id AND p.kind=$kind AND p.channel='$channel'";
+            if ($pageOnly) $sql .= " INNER JOIN @activity_page p ON p.id=q.id AND p.branch_id=q.branch_id AND p.kind COLLATE DATABASE_DEFAULT=$kind AND p.channel='$channel'";
             $sql .= ' WHERE q.branch_id=' . (int) $filters['branch'];
             if (!empty($filters['batch_id'])) $sql .= ' AND q.' . $batchKey . '=' . (int) $filters['batch_id'];
             if ($channel === 'whatsapp' && !empty($filters['kind'])) {
@@ -120,7 +122,8 @@ final class ActivityRepository
             $kindLiteral = in_array($filters['kind'] ?? '', ['campaign','invoice'], true) ? $filters['kind'] : '';
             $kindFilter = $channel === 'whatsapp' && !empty($filters['kind']) ? " WHERE b.source_type='$kindLiteral'" : '';
             // Aggregate narrow queue columns before joining names and batch state.
-            $queries[] = "SELECT $kind AS kind, '$channel' AS channel, q.batch_id, b.name, b.status AS batch_status,
+            $queries[] = "SELECT $kind COLLATE DATABASE_DEFAULT AS kind, '$channel' COLLATE DATABASE_DEFAULT AS channel,
+                q.batch_id, b.name COLLATE DATABASE_DEFAULT AS name, b.status COLLATE DATABASE_DEFAULT AS batch_status,
                 q.total, q.processed, q.failed, q.created_at
                 FROM (SELECT branch_id, $batchKey AS batch_id, COUNT(*) AS total,
                     SUM(CASE WHEN status NOT IN ('pending','sending') THEN 1 ELSE 0 END) AS processed,

@@ -16,6 +16,13 @@ $pdo->exec("UPDATE dbo.SendMail_Settings SET setting_value='20260914-1' WHERE se
 Schema::migrate(); Schema::migrate();
 check((int)$pdo->query("SELECT COUNT(*) FROM sys.indexes WHERE name LIKE 'IX_SendMail_%_Purge%'")->fetchColumn()===7,'Actualizar indices de purga de forma idempotente');
 $_SESSION['branch_id']=1;
+$defaultCollation=(string)$pdo->query("SELECT CONVERT(varchar(80),DATABASEPROPERTYEX(DB_NAME(),'Collation'))")->fetchColumn();
+$eventCollation=$defaultCollation==='Modern_Spanish_CI_AS'?'SQL_Latin1_General_CP850_CI_AS':'Modern_Spanish_CI_AS';
+$pdo->exec("DROP INDEX IX_SendMail_WhatsAppEvents_Message ON dbo.SendMail_WhatsAppEvents;
+    DROP INDEX IX_SendMail_WhatsAppEvents_PurgeMessage ON dbo.SendMail_WhatsAppEvents;
+    ALTER TABLE dbo.SendMail_WhatsAppEvents ALTER COLUMN provider_message_id nvarchar(300) COLLATE $eventCollation NOT NULL;
+    CREATE INDEX IX_SendMail_WhatsAppEvents_Message ON dbo.SendMail_WhatsAppEvents(provider_message_id,created_at DESC);
+    CREATE INDEX IX_SendMail_WhatsAppEvents_PurgeMessage ON dbo.SendMail_WhatsAppEvents(provider_message_id,branch_id,created_at);");
 $suffix=bin2hex(random_bytes(6));
 $branchStmt=$pdo->prepare("INSERT INTO dbo.SendMail_Branches(name,server,database_name,username,password_cipher) OUTPUT INSERTED.id VALUES(:name,'fixture','fixture','fixture','fixture')");
 $branchStmt->execute([':name'=>'Sucursal purga '.$suffix]);$otherBranch=(int)$branchStmt->fetchColumn();
