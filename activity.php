@@ -16,10 +16,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('activity.php?' . http_build_query($viewQuery));
     } catch (Throwable $e) { $error = $e->getMessage(); }
 }
+// Background refreshes do not render/consume session flashes like the full page.
+csrf_token();
+if (query_string('fragment') === '1') session_write_close();
+$activityStarted = microtime(true);
 $summary = ActivityRepository::summary($filters);
 $batches = (!$showRecipients || $filters['batch_id']) ? ActivityRepository::batches($filters) : [];
 $result = $showRecipients ? ActivityRepository::page($filters, $page) : ['rows'=>[], 'total'=>0];
 $worker = WorkerRuntime::status();
+header(sprintf('Server-Timing: activity;dur=%.1f', (microtime(true)-$activityStarted)*1000));
 $fragment = query_string('fragment') === '1';
 if ($fragment) header('Cache-Control: no-store');
 if (!$fragment) {
