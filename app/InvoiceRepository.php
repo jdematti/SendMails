@@ -277,7 +277,7 @@ final class InvoiceRepository
                 $xml .= '<id>' . htmlspecialchars($id, ENT_XML1 | ENT_QUOTES, 'UTF-8') . '</id>';
             }
             $params[':selected_ids_xml'] = $xml . '</ids>';
-            $where[] = 'CONVERT(nvarchar(80), F.Id) IN (SELECT invoice_id FROM @selected_invoice_ids)';
+            $where[] = 'CONVERT(nvarchar(80), F.Id) IN (SELECT invoice_id COLLATE DATABASE_DEFAULT FROM @selected_invoice_ids)';
         }
         $snb = trim((string) ($filters['snb'] ?? ''));
         if ($snb !== '') {

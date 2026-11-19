@@ -148,7 +148,7 @@ final class ClientRepository
                     SELECT DISTINCT selected.node.value('.', 'nvarchar(4000)')
                     FROM @selected_xml.nodes('/ids/id') selected(node);
                 SELECT " . self::selectSql() . ' FROM ' . self::sourceSql()
-                . ' WHERE ' . $identifier . ' IN (SELECT oid FROM @selected_clients) ORDER BY razon_social, codigo_cliente';
+                . ' WHERE ' . $identifier . ' IN (SELECT oid COLLATE DATABASE_DEFAULT FROM @selected_clients) ORDER BY razon_social, codigo_cliente';
             $stmt = self::pdo()->prepare($sql);
             $stmt->execute([':selected_ids_xml'=>$xml . '</ids>']);
             return $stmt->fetchAll();
