@@ -28,7 +28,7 @@ final class ComposeService
 
     public static function search(string $kind, array $input, int $page = 1, bool $idsOnly = false): array
     {
-        if ($kind === 'campaign') return ClientRepository::page($input['q'], $input['plans'], $page, $idsOnly);
+        if ($kind === 'campaign') return ClientRepository::page($input['q'], $input['plans'], $page, $idsOnly, false);
         if ($input['due_date'] === '') return $idsOnly ? [] : ['rows' => [], 'total' => 0, 'page' => 1, 'size' => 50];
         $filters = self::invoiceFilters($input);
         if ($idsOnly) return InvoiceRepository::matchingIds($input['due_date'], $input['status'], $input['include_sent'], $filters, $input['channel'], false);

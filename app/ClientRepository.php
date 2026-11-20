@@ -65,7 +65,7 @@ final class ClientRepository
         return array_slice($rows, 0, $limit);
     }
 
-    public static function page(string $term, array $plans, int $page = 1, bool $idsOnly = false): array
+    public static function page(string $term, array $plans, int $page = 1, bool $idsOnly = false, bool $orderedIds = true): array
     {
         $select = self::selectSql(true);
         $sql = 'WITH clients AS (SELECT ' . $select . ' FROM ' . self::sourceSql() . ') ';
@@ -88,7 +88,9 @@ final class ClientRepository
         }
         $criteria = ' FROM clients WHERE ' . implode(' AND ', $where);
         if ($idsOnly) {
-            $sql .= 'SELECT oid' . $criteria . ' ORDER BY razon_social, codigo_cliente, oid';
+            // Selecting a set does not require sorting every matching client.
+            $sql .= 'SELECT oid' . $criteria;
+            if ($orderedIds) $sql .= ' ORDER BY razon_social, codigo_cliente, oid';
         } else {
             $params[':page_start'] = (max(1, $page) - 1) * 50;
             $params[':page_end'] = $params[':page_start'] + 50;
