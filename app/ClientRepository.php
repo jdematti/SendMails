@@ -147,6 +147,7 @@ final class ClientRepository
                 INSERT INTO @selected_clients(oid)
                     SELECT DISTINCT selected.node.value('.', 'nvarchar(4000)')
                     FROM @selected_xml.nodes('/ids/id') selected(node);
+                SET NOCOUNT OFF;
                 SELECT " . self::selectSql() . ' FROM ' . self::sourceSql()
                 . ' WHERE ' . $identifier . ' IN (SELECT oid COLLATE DATABASE_DEFAULT FROM @selected_clients) ORDER BY razon_social, codigo_cliente';
             $stmt = self::pdo()->prepare($sql);

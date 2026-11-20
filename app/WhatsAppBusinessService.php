@@ -60,7 +60,7 @@ final class WhatsAppBusinessService
     {
         self::assertConfigured($config);
         $phone = WhatsAppPhone::normalizeRequired($phone, (string) ($config['country_code'] ?? '54'));
-        $name = trim((string) ($template['name'] ?? ''));
+        $name = trim((string) ($template['template_name'] ?? $template['name'] ?? ''));
         $language = trim((string) ($template['language'] ?? ''));
         if ($name === '' || $language === '') {
             throw new RuntimeException('La plantilla de WhatsApp no tiene nombre o idioma.');

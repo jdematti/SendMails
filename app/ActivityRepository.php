@@ -82,7 +82,8 @@ final class ActivityRepository
                 ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC, kind, channel) AS page_row_number
             FROM activity WHERE $where)
             INSERT INTO @activity_page SELECT * FROM numbered_activity
-                WHERE page_row_number > :page_start AND page_row_number <= :page_end; "
+                WHERE page_row_number > :page_start AND page_row_number <= :page_end;
+            SET NOCOUNT OFF; "
             . self::source($filters, 'full', true) . "
             SELECT a.*, p.result_total FROM activity a INNER JOIN @activity_page p
                 ON p.id=a.id AND p.branch_id=a.branch_id AND p.kind=a.kind AND p.channel=a.channel

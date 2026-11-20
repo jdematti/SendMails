@@ -64,6 +64,8 @@ try {
             Write-Output 'SMOKE PHP LOG OK: sin warnings, errores fatales ni avisos de PHP.'
         }
     }
+    Run-Php 'worker_pipeline.php'
+    Run-Php 'whatsapp_pipeline.php'
     Write-Output 'TODAS LAS PRUEBAS OK. Solo datos ficticios; sin transportes externos ni tareas reales.'
 } finally {
     if ($server -and !$server.HasExited) { Stop-Process -Id $server.Id -Force }

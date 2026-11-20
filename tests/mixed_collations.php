@@ -3,6 +3,11 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') exit(1);
 require __DIR__ . '/test_bootstrap.php';
 function check(bool $condition,string $message):void { if(!$condition)throw new RuntimeException($message); }
+function checkAffectedRows(PDO $pdo):void {
+    $stmt=$pdo->prepare('UPDATE dbo.FacturasTel SET Estado=Estado WHERE Id=:id');
+    $stmt->execute([':id'=>'F1000']);
+    check($stmt->rowCount()===1,'Las consultas de lectura no deshabilitan el conteo usado al reclamar envios');
+}
 $pdo=Database::pdo(); Schema::ensure();
 $database=(string)getenv('SENDMAILS_TEST_DATABASE');
 if(!preg_match('/^SendMails_Agility_Test_[a-f0-9]{12}$/D',$database))throw new RuntimeException('Base inesperada');
@@ -32,11 +37,14 @@ try {
     check($conflict,'La fixture reproduce el conflicto de intercalacion original');
     $clients=ClientRepository::findByOids($ids);
     check(count($clients)===1000,'Clientes con intercalacion distinta');
+    checkAffectedRows($pdo);
     $blocked=EmailExclusionRepository::campaignBlockedEmails(array_column($clients,'email'),1);
     check(isset($blocked['cliente1@example.invalid'],$blocked['cliente2@example.invalid']),'Bajas y exclusiones con distintas intercalaciones');
+    checkAffectedRows($pdo);
     $template=InvoiceRepository::defaultTemplate();
     $invoices=InvoiceRepository::search('2026-09-30','I',true,$template,['selected_ids'=>array_map(static fn(string $id):string=>'F'.$id,$ids)],0,'email',1,false);
     check(count($invoices)===1000,'Facturas con intercalacion distinta');
+    checkAffectedRows($pdo);
     $input=ComposeService::input(['name'=>'Intercalaciones','channel'=>'email','scheduled_at'=>'2026-11-19T12:00',
         'template_id'=>TemplateRepository::all(true)[0]['id'],'ids'=>$ids]);
     $review=ComposeService::review('campaign',$input);
@@ -59,5 +67,6 @@ try {
     check(ActivityRepository::summary($filters)['pending']>0,'Resumen unificado');
     $waFilters=ActivityRepository::filters(['kind'=>'campaign','channel'=>'whatsapp']);
     check(count(ActivityRepository::page($waFilters)['rows'])===1,'Cruce del tipo WhatsApp con tabla auxiliar de paginacion');
+    checkAffectedRows($pdo);
     echo "COLLATIONS OK: clientes, facturas, bajas, exclusiones y revision con Modern_Spanish y SQL_Latin1_General_CP850. Base temporal; sin envios.\n";
 } finally { if($pdo->inTransaction())$pdo->rollBack(); }

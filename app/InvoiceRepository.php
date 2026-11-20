@@ -318,7 +318,8 @@ final class InvoiceRepository
             DECLARE @selected_invoice_ids TABLE (invoice_id nvarchar(80) PRIMARY KEY);
             INSERT INTO @selected_invoice_ids(invoice_id)
                 SELECT DISTINCT selected.node.value('.', 'nvarchar(80)')
-                FROM @selected_xml.nodes('/ids/id') selected(node); ";
+                FROM @selected_xml.nodes('/ids/id') selected(node);
+            SET NOCOUNT OFF; ";
     }
 
     public static function findBySelectionTokens(array $tokens): array

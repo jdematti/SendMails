@@ -113,7 +113,7 @@ final class Settings
             'port' => (string) normalize_int((string) ($data['port'] ?? '587'), 587, 1, 65535),
             'username' => trim((string) ($data['username'] ?? '')),
             'password' => (string) ($data['password'] ?? ''),
-            'encryption' => in_array(($data['encryption'] ?? 'tls'), ['tls', 'ssl', 'none'], true) ? $data['encryption'] : 'tls',
+            'encryption' => in_array(($data['encryption'] ?? 'tls'), ['tls', 'ssl', 'none'], true) ? ($data['encryption'] ?? 'tls') : 'tls',
             'from_email' => trim((string) ($data['from_email'] ?? '')),
             'from_name' => trim((string) ($data['from_name'] ?? '')),
             'reply_to' => trim((string) ($data['reply_to'] ?? '')),

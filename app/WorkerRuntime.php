@@ -130,7 +130,7 @@ final class WorkerRuntime
                         if (($limit > 0 && $result['processed'] >= $limit) || ($maxSeconds > 0 && microtime(true) - self::$started >= $maxSeconds) || is_file(STORAGE_PATH . '/maintenance.flag')) break 2;
                         $key = $branch . ':' . $channel;
                         if (isset($exhausted[$key])) continue;
-                        if ((int) (self::$state['next_by_channel'][$key] ?? 0) > time()) { $waiting = true; continue; }
+                        if ((float) (self::$state['next_by_channel'][$key] ?? 0) > microtime(true)) { $waiting = true; continue; }
                         try {
                             if (!WorkerControl::read((int) $branch)['enabled']) break;
                             self::$state['active_branch'] = (int) $branch;
@@ -155,7 +155,7 @@ final class WorkerRuntime
                         foreach (['processed', 'sent', 'failed', 'skipped'] as $field) $result[$field] += (int) ($step[$field] ?? 0);
                         $processedInCycle += (int) $step['processed'];
                         $result['errors'] = array_slice(array_merge($result['errors'], $step['errors']), -20);
-                        self::$state['next_by_channel'][$key] = time() + max(0, (int) ($step['interval_seconds'] ?? 0));
+                        self::$state['next_by_channel'][$key] = microtime(true) + max(0, (int) ($step['interval_seconds'] ?? 0));
                         self::heartbeat('running', $result['processed']);
                     }
                 }

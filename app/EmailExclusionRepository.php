@@ -59,6 +59,7 @@ final class EmailExclusionRepository
             INSERT INTO @emails(email)
                 SELECT DISTINCT selected.node.value('.', 'nvarchar(320)')
                 FROM @emails_xml.nodes('/emails/email') selected(node);
+            SET NOCOUNT OFF;
             SELECT u.email_normalized COLLATE DATABASE_DEFAULT AS email_normalized FROM dbo.SendMail_Unsubscribes u
                 INNER JOIN @emails selected ON selected.email COLLATE DATABASE_DEFAULT=u.email_normalized
                 WHERE u.branch_id=:branch_id
