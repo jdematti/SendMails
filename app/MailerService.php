@@ -6,6 +6,10 @@ use PHPMailer\PHPMailer\PHPMailer;
 
 final class MailerService
 {
+    private static ?PHPMailer $smtpMailer = null;
+    private static string $smtpConfigKey = '';
+    private static float $smtpOpenedAt = 0;
+
     public static function render(string $content, array $client): string
     {
         $unsubscribeUrl = (string) ($client['url_baja'] ?? $client['unsubscribe_url'] ?? '');
@@ -337,47 +341,73 @@ final class MailerService
 
     private static function sendMail(array $smtp, string $toEmail, string $toName, string $subject, string $html, array $options = []): void
     {
-        $mail = new PHPMailer(true);
-        $mail->CharSet = 'UTF-8';
-        $mail->isSMTP();
-        $mail->Host = (string) $smtp['host'];
-        $mail->Port = (int) $smtp['port'];
-        $mail->SMTPAuth = trim((string) $smtp['username']) !== '';
-        if ($mail->SMTPAuth) {
-            $mail->Username = (string) $smtp['username'];
-            $mail->Password = (string) $smtp['password'];
+        $configKey = hash('sha256', serialize([
+            $smtp['host'], $smtp['port'], $smtp['username'], $smtp['password'], $smtp['encryption'] ?? 'tls',
+        ]));
+        if (self::$smtpMailer !== null && (self::$smtpConfigKey !== $configKey || microtime(true) - self::$smtpOpenedAt >= 540)) {
+            self::$smtpMailer->smtpClose();
+            self::$smtpMailer = null;
         }
+        if (self::$smtpMailer === null) {
+            self::$smtpMailer = new PHPMailer(true);
+            self::$smtpConfigKey = $configKey;
+            self::$smtpOpenedAt = microtime(true);
+        }
+        $mail = self::$smtpMailer;
+        $mail->clearAllRecipients();
+        $mail->clearReplyTos();
+        $mail->clearAttachments();
+        $mail->clearCustomHeaders();
+        $mail->Sender = '';
+        $mail->SMTPKeepAlive = true;
+        try {
+            $mail->CharSet = 'UTF-8';
+            $mail->isSMTP();
+            $mail->Host = (string) $smtp['host'];
+            $mail->Port = (int) $smtp['port'];
+            $mail->SMTPAuth = trim((string) $smtp['username']) !== '';
+            if ($mail->SMTPAuth) {
+                $mail->Username = (string) $smtp['username'];
+                $mail->Password = (string) $smtp['password'];
+            }
 
-        if (($smtp['encryption'] ?? 'tls') === 'tls') {
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        } elseif (($smtp['encryption'] ?? '') === 'ssl') {
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        }
+            $mail->SMTPSecure = '';
+            if (($smtp['encryption'] ?? 'tls') === 'tls') {
+                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            } elseif (($smtp['encryption'] ?? '') === 'ssl') {
+                $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+            }
 
-        $fromEmail = trim((string) ($options['from_email'] ?? $smtp['from_email'] ?? ''));
-        $fromName = trim((string) ($options['from_name'] ?? $smtp['from_name'] ?? ''));
-        $replyTo = trim((string) ($options['reply_to'] ?? $smtp['reply_to'] ?? ''));
-        $bcc = trim((string) ($options['bcc'] ?? ''));
+            $fromEmail = trim((string) ($options['from_email'] ?? $smtp['from_email'] ?? ''));
+            $fromName = trim((string) ($options['from_name'] ?? $smtp['from_name'] ?? ''));
+            $replyTo = trim((string) ($options['reply_to'] ?? $smtp['reply_to'] ?? ''));
+            $bcc = trim((string) ($options['bcc'] ?? ''));
 
-        $mail->setFrom($fromEmail, $fromName);
-        if ($replyTo !== '') {
-            $mail->addReplyTo($replyTo);
+            $mail->setFrom($fromEmail, $fromName);
+            if ($replyTo !== '') {
+                $mail->addReplyTo($replyTo);
+            }
+            if ($bcc !== '') {
+                $mail->addBCC($bcc);
+            }
+            $mail->addAddress($toEmail, $toName);
+            $unsubscribeUrl = trim((string) ($options['unsubscribe_url'] ?? ''));
+            if ($unsubscribeUrl !== '' && strpos($unsubscribeUrl, "\n") === false && strpos($unsubscribeUrl, "\r") === false) {
+                $mail->addCustomHeader('List-Unsubscribe', '<' . $unsubscribeUrl . '>');
+            }
+            $mail->isHTML(true);
+            $preparedHtml = self::prepareInlineImages($mail, $html);
+            $mail->Subject = $subject;
+            $mail->Body = $preparedHtml;
+            $mail->AltBody = trim(strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $html)));
+            CampaignAttachments::addToMail($mail, $options['attachments'] ?? []);
+            $mail->send();
+        } catch (Throwable $e) {
+            // Do not retry: the server may already have accepted the message.
+            $mail->smtpClose();
+            self::$smtpMailer = null;
+            throw $e;
         }
-        if ($bcc !== '') {
-            $mail->addBCC($bcc);
-        }
-        $mail->addAddress($toEmail, $toName);
-        $unsubscribeUrl = trim((string) ($options['unsubscribe_url'] ?? ''));
-        if ($unsubscribeUrl !== '' && strpos($unsubscribeUrl, "\n") === false && strpos($unsubscribeUrl, "\r") === false) {
-            $mail->addCustomHeader('List-Unsubscribe', '<' . $unsubscribeUrl . '>');
-        }
-        $mail->isHTML(true);
-        $preparedHtml = self::prepareInlineImages($mail, $html);
-        $mail->Subject = $subject;
-        $mail->Body = $preparedHtml;
-        $mail->AltBody = trim(strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $html)));
-        CampaignAttachments::addToMail($mail, $options['attachments'] ?? []);
-        $mail->send();
     }
 
     private static function hasUnsubscribePlaceholder(string $html): bool
