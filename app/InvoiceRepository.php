@@ -167,13 +167,30 @@ final class InvoiceRepository
         return $rows;
     }
 
-    public static function matchingIds(string $dueDate, string $status, bool $includeSent, array $filters = [], string $channel = 'email'): array
+    public static function matchingIds(string $dueDate, string $status, bool $includeSent, array $filters = [], string $channel = 'email', bool $ordered = true): array
     {
         Schema::ensure();
-        $criteria = self::invoiceSearchCriteria($dueDate, $status, $includeSent, $filters, self::normalizeDeliveryChannel($channel), self::invoicePhoneExpression());
-        $sql = 'SELECT CONVERT(nvarchar(80), F.Id) FROM FacturasTel F
-            INNER JOIN clientes C ON C.OId COLLATE Modern_Spanish_CI_AS = F.IdCliente
-            WHERE ' . implode(' AND ', $criteria['where']) . ' ORDER BY F.SNB, F.Id';
+        $channel = self::normalizeDeliveryChannel($channel);
+        $phoneExpression = $channel === 'email' && trim((string)($filters['phone'] ?? '')) === '' ? "''" : self::invoicePhoneExpression();
+        $criteria = self::invoiceSearchCriteria($dueDate, $status, $includeSent, $filters, $channel, $phoneExpression);
+        if ($ordered) {
+            $sql = 'SELECT CONVERT(nvarchar(80), F.Id) FROM FacturasTel F
+                INNER JOIN clientes C ON C.OId = F.IdCliente COLLATE Modern_Spanish_CI_AS
+                WHERE ' . implode(' AND ', $criteria['where']) . ' ORDER BY F.SNB, F.Id';
+        } else {
+            // Selecting a set of invoices needs neither recipient payloads nor a
+            // global sort. Keep date/status predicates on invoices, and only
+            // test the existence of a matching client/contact.
+            $invoiceWhere = [];
+            $clientWhere = ['C.OId = F.IdCliente COLLATE Modern_Spanish_CI_AS'];
+            foreach ($criteria['where'] as $condition) {
+                if (str_contains($condition, 'C.')) $clientWhere[] = $condition;
+                else $invoiceWhere[] = $condition;
+            }
+            $sql = 'SELECT CONVERT(nvarchar(80), F.Id) FROM FacturasTel F WHERE '
+                . implode(' AND ', $invoiceWhere) . ' AND EXISTS (SELECT 1 FROM clientes C WHERE '
+                . implode(' AND ', $clientWhere) . ')';
+        }
         if (isset($criteria['params'][':selected_ids_xml'])) {
             $sql = self::selectionSqlPrefix() . $sql;
         }

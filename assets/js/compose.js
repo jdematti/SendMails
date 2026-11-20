@@ -48,8 +48,12 @@
         ids = new Set((value.ids || []).map(String)); channels(); selection(); extraFilters(true);
     };
     async function api(action, extra = {}) {
+        const values = input();
+        // Search and select-all use filters; resending thousands of selected IDs
+        // only enlarges the request and is unnecessary for these read operations.
+        if (action === 'search' || action === 'select_all') values.ids = [];
         const response = await fetch('compose_api.php', {method: 'POST', headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: JSON.stringify({action, kind: config.kind, csrf_token: config.csrf, id: draftId, revision, input: input(), ...extra})});
+            body: JSON.stringify({action, kind: config.kind, csrf_token: config.csrf, id: draftId, revision, input: values, ...extra})});
         if (!(response.headers.get('Content-Type') || '').includes('application/json')) throw new Error('La sesión venció o el sistema se está actualizando. Recargá la página.');
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || 'No se pudo completar la operación.');
@@ -135,7 +139,11 @@
     $('previousPage').onclick = () => run(() => search(page - 1));
     $('nextPage').onclick = () => run(() => search(page + 1));
     $('selectPage').onclick = () => { rows.forEach(row => ids.add(String(row.oid ?? row.invoice_id))); selection(); changed(); };
-    $('selectAll').onclick = () => run(async () => { const data = await api('select_all'); data.ids.forEach(id => ids.add(String(id))); selection(); changed(); });
+    $('selectAll').onclick = () => run(async () => {
+        notice('Seleccionando todos los resultados…');
+        const data = await api('select_all');
+        data.ids.forEach(id => ids.add(String(id))); selection(); changed(); notice('');
+    });
     $('clearSelection').onclick = () => { ids.clear(); selection(); changed(); };
     $('saveDraft').onclick = () => run(async () => { saved(await api('save')); notice('Borrador guardado. Otro usuario de esta sucursal puede continuarlo.'); });
     $('reviewSend').onclick = $('reviewTop').onclick = () => run(review);

@@ -20,7 +20,8 @@ try {
         codigo_cliente,razon_social,plan_contratado,DirEMail,telefono_movil,localidad,provincia FROM dbo.clientes");
     $pk=(string)$pdo->query("SELECT name FROM sys.key_constraints WHERE parent_object_id=OBJECT_ID('dbo.FacturasTel') AND type='PK'")->fetchColumn();
     $pk=str_replace(']',']]',$pk);
-    $pdo->exec("ALTER TABLE dbo.FacturasTel DROP CONSTRAINT [$pk];
+    $pdo->exec("ALTER TABLE dbo.FacturasTel ALTER COLUMN IdCliente nvarchar(80) COLLATE $other NULL;
+        ALTER TABLE dbo.FacturasTel DROP CONSTRAINT [$pk];
         ALTER TABLE dbo.FacturasTel ALTER COLUMN Id nvarchar(80) COLLATE $other NOT NULL;
         ALTER TABLE dbo.FacturasTel ADD PRIMARY KEY(Id);
         DROP INDEX UX_SendMail_Unsubscribes_BranchEmail ON dbo.SendMail_Unsubscribes;
@@ -44,6 +45,10 @@ try {
     $template=InvoiceRepository::defaultTemplate();
     $invoices=InvoiceRepository::search('2026-09-30','I',true,$template,['selected_ids'=>array_map(static fn(string $id):string=>'F'.$id,$ids)],0,'email',1,false);
     check(count($invoices)===1000,'Facturas con intercalacion distinta');
+    $fastIds=InvoiceRepository::matchingIds('2026-09-30','I',true,[],'email',false);
+    $orderedIds=InvoiceRepository::matchingIds('2026-09-30','I',true);
+    sort($fastIds,SORT_STRING);sort($orderedIds,SORT_STRING);
+    check($fastIds===$orderedIds,'Seleccion total con intercalaciones mixtas');
     checkAffectedRows($pdo);
     $input=ComposeService::input(['name'=>'Intercalaciones','channel'=>'email','scheduled_at'=>'2026-11-19T12:00',
         'template_id'=>TemplateRepository::all(true)[0]['id'],'ids'=>$ids]);

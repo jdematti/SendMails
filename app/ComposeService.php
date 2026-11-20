@@ -31,7 +31,7 @@ final class ComposeService
         if ($kind === 'campaign') return ClientRepository::page($input['q'], $input['plans'], $page, $idsOnly);
         if ($input['due_date'] === '') return $idsOnly ? [] : ['rows' => [], 'total' => 0, 'page' => 1, 'size' => 50];
         $filters = self::invoiceFilters($input);
-        if ($idsOnly) return InvoiceRepository::matchingIds($input['due_date'], $input['status'], $input['include_sent'], $filters, $input['channel']);
+        if ($idsOnly) return InvoiceRepository::matchingIds($input['due_date'], $input['status'], $input['include_sent'], $filters, $input['channel'], false);
         // The recipient list does not display a message or invoice links.
         $rows = InvoiceRepository::search($input['due_date'], $input['status'], $input['include_sent'], [], $filters, 50, $input['channel'], $page, false, false);
         $total = InvoiceRepository::searchTotal($input['due_date'], $input['status'], $input['include_sent'], $filters, $input['channel']);
