@@ -137,20 +137,70 @@ foreach([4000,4000,6000] as $size){
     $pdo->exec("INSERT INTO dbo.SendMail_Queue(branch_id,campaign_id,template_id,email_to,status,created_at,scheduled_at,sent_at)
         SELECT TOP $extra $otherBranch,$id,$template,'fixture@example.invalid','sent','2020-01-01','2020-01-01','2020-01-02'
         FROM sys.all_objects a CROSS JOIN sys.all_objects b;
-        INSERT INTO dbo.SendMail_Log(branch_id,campaign_id,queue_id,email_to,status,created_at)
-        SELECT $otherBranch,$id,q.id,'fixture@example.invalid','sent','2020-01-02' FROM dbo.SendMail_Queue q
+        INSERT INTO dbo.SendMail_Log(branch_id,campaign_id,queue_id,email_to,status,created_at,html_snapshot)
+        SELECT $otherBranch,$id,q.id,'fixture@example.invalid','sent','2020-01-02',REPLICATE(CAST('x' AS nvarchar(max)),4096) FROM dbo.SendMail_Queue q
         WHERE q.campaign_id=$id AND q.id<>".$row['queue_id']);
 }
 $started=microtime(true);
+// Bound individual delete statements, including an indivisible oversized batch.
+$pdo->exec("CREATE TRIGGER dbo.fixture_bounded_log_delete ON dbo.SendMail_Log AFTER DELETE AS
+    IF (SELECT COUNT(*) FROM deleted)>250 THROW 51000,'Borrado de logs demasiado grande',1;");
+$pdo->exec("CREATE TRIGGER dbo.fixture_bounded_queue_delete ON dbo.SendMail_Queue AFTER DELETE AS
+    IF (SELECT COUNT(*) FROM deleted)>250 THROW 51000,'Borrado de destinatarios demasiado grande',1;");
 foreach($large as $i=>$id){
     $block=PurgeRepository::preview(['branch_id'=>$otherBranch,'channel'=>'email','kind'=>'campaign']);
     check(count($block['rows'])===1 && (int)$block['rows'][0]['id']===$id,'Dividir por volumen manteniendo lotes completos y ordenados');
     check($block['more']===($i<2),'Indicar si queda historial por purgar');
+    if ($i===0) {
+        $pdo->exec('CREATE TABLE dbo.fixture_purge_chunks(calls int NOT NULL); INSERT INTO dbo.fixture_purge_chunks VALUES(0)');
+        $pdo->exec("CREATE TRIGGER dbo.fixture_fail_second_chunk ON dbo.SendMail_Log AFTER DELETE AS
+            UPDATE dbo.fixture_purge_chunks SET calls=calls+1;
+            IF (SELECT calls FROM dbo.fixture_purge_chunks)=2 THROW 51000,'Fallo despues del primer bloque',1;");
+        try { rejects(static fn()=>PurgeRepository::execute($block),'Fallo despues del primer bloque'); }
+        finally { $pdo->exec('DROP TRIGGER dbo.fixture_fail_second_chunk'); }
+        check((int)$pdo->query('SELECT COUNT(*) FROM dbo.SendMail_Log WHERE campaign_id='.$id)->fetchColumn()===4000,'Revertir tambien el primer bloque de registros borrados');
+        check((int)$pdo->query('SELECT COUNT(*) FROM dbo.SendMail_Queue WHERE campaign_id='.$id)->fetchColumn()===4000,'Conservar destinatarios despues del fallo entre bloques');
+        check((int)$pdo->query('SELECT calls FROM dbo.fixture_purge_chunks')->fetchColumn()===0,'Revertir todos los efectos de la transaccion');
+        check((int)$pdo->query("SELECT COUNT(*) FROM dbo.SendMail_Settings WHERE setting_key='purge_receipt:".$block['token']."'")->fetchColumn()===0,'No guardar comprobante parcial');
+        $pdo->exec('DROP TABLE dbo.fixture_purge_chunks');
+    }
     $result=PurgeRepository::execute($block);
     check((int)$result['totals']['recipients']===($i===2?6000:4000),'Eliminar todos los destinatarios revisados');
 }
+$pdo->exec('DROP TRIGGER dbo.fixture_bounded_log_delete; DROP TRIGGER dbo.fixture_bounded_queue_delete');
 check((int)$pdo->query("SELECT COUNT(*) FROM dbo.SendMail_Log WHERE email_to='unrelated@example.invalid'")->fetchColumn()===50000,'No borrar historial ajeno al lote');
 echo 'PURGE SCALE OK: 14000 destinatarios, 14000 logs asociados, 50000 logs ajenos; '.round(microtime(true)-$started,2)." s para las tres operaciones locales.\n";
+foreach (['invoice_email','whatsapp'] as $source) {
+    $row=fixture($source,$otherBranch,'invoice'); $id=$row['id'];
+    [$batch,$queue,$foreign,$log]=$sources[$source];
+    if ($source==='invoice_email') {
+        $pdo->exec("INSERT INTO dbo.$queue(branch_id,batch_id,template_id,email_to,invoice_id,snb,invoice_url,status,created_at,scheduled_at,sent_at)
+            SELECT TOP 599 $otherBranch,$id,$invoiceTemplate,'fixture@example.invalid','F1','00001','https://example.invalid','sent','20200101','20200101','20200102'
+            FROM sys.all_objects;
+            INSERT INTO dbo.$log(branch_id,queue_id,email_to,status,created_at,html_snapshot)
+            SELECT $otherBranch,q.id,'fixture@example.invalid','sent','20200102',REPLICATE(CAST('x' AS nvarchar(max)),4096)
+            FROM dbo.$queue q WHERE q.batch_id=$id AND q.id<>".$row['queue_id']);
+    } else {
+        $pdo->exec("INSERT INTO dbo.$queue(branch_id,batch_id,template_id,phone_to,provider_message_id,status,created_at,scheduled_at,sent_at)
+            SELECT TOP 599 $otherBranch,$id,$template,'5491100000001','chunk-$id-'+CONVERT(varchar(20),object_id),'sent','20200101','20200101','20200102'
+            FROM sys.all_objects;
+            INSERT INTO dbo.$log(branch_id,provider_message_id,event_status,event_hash,payload_json,created_at)
+            SELECT $otherBranch,q.provider_message_id,'sent',CONVERT(varchar(64),HASHBYTES('SHA2_256',q.provider_message_id),2),REPLICATE(CAST('x' AS nvarchar(max)),4096),'20200102'
+            FROM dbo.$queue q WHERE q.batch_id=$id AND q.id<>".$row['queue_id']);
+    }
+    $pdo->exec("CREATE TRIGGER dbo.fixture_bounded_other_log ON dbo.$log AFTER DELETE AS
+        IF (SELECT COUNT(*) FROM deleted)>250 THROW 51000,'Borrado de logs demasiado grande',1;");
+    $pdo->exec("CREATE TRIGGER dbo.fixture_bounded_other_queue ON dbo.$queue AFTER DELETE AS
+        IF (SELECT COUNT(*) FROM deleted)>250 THROW 51000,'Borrado de destinatarios demasiado grande',1;");
+    try {
+        $block=PurgeRepository::preview(['branch_id'=>$otherBranch,'channel'=>$source==='whatsapp'?'whatsapp':'email','kind'=>'invoice']);
+        check(count($block['rows'])===1 && (int)$block['rows'][0]['id']===$id,'Revisar lote de '.$source);
+        $receipt=PurgeRepository::execute($block);
+        check($receipt['totals']===['batches'=>1,'recipients'=>600,'records'=>600],'Borrar todos los bloques de '.$source);
+        check(!existsFixture($row),'Eliminar lote completo de '.$source);
+    } finally { $pdo->exec('DROP TRIGGER dbo.fixture_bounded_other_log; DROP TRIGGER dbo.fixture_bounded_other_queue'); }
+}
+echo "PURGE CHUNKS OK: campanas email, facturas email y WhatsApp, snapshots, logs antiguos y rollback entre bloques.\n";
 // Many eligible batches: counts must apply to the bounded preview, not the
 // complete historic set. This block only previews, then rolls back its fixture.
 $pdo->beginTransaction();

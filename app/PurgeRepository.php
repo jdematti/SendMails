@@ -7,6 +7,7 @@ final class PurgeRepository
     public const ROW_BUDGET = 10000;
     private const QUERY_SECONDS = 15;
     private const OPERATION_SECONDS = 45;
+    private const DELETE_CHUNK = 250;
     private static ?float $deadline = null;
     private const SOURCES = [
         'campaign_email'=>['batch'=>'SendMail_Campaigns','queue'=>'SendMail_Queue','foreign'=>'campaign_id','log'=>'SendMail_Log','kind'=>'campaign','channel'=>'email'],
@@ -134,6 +135,7 @@ final class PurgeRepository
         $filters = self::filters($preview['filters']);
         $pdo = Database::pdo(); $pdo->beginTransaction();
         self::$deadline = microtime(true) + self::OPERATION_SECONDS;
+        $phase = 'bloqueo de purga';
         try {
             $lock = self::statement("DECLARE @r int; EXEC @r=sp_getapplock @Resource='SendMails:purge',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=0; SELECT @r")->fetchColumn();
             if ((int) $lock < 0) throw new RuntimeException('Otro administrador está purgando. Intentá nuevamente al terminar.');
@@ -147,34 +149,59 @@ final class PurgeRepository
             foreach ($preview['rows'] as $row) {
                 $key = $row['source'];
                 if (!isset(self::SOURCES[$key])) throw new RuntimeException('Lote inválido.');
+                $phase = 'revalidar ' . $key . ' #' . (int)$row['id'];
                 $current = self::candidates($key,$filters,(int)$row['id'],true);
                 if (count($current) !== 1 || $current[0] !== $row) throw new RuntimeException('El historial cambió desde la vista previa. No se eliminó nada. Calculala nuevamente.');
                 $s = self::SOURCES[$key]; $batch = $s['batch']; $queue = $s['queue']; $log = $s['log']; $foreign = $s['foreign'];
-                $params = [':id'=>$row['id'], ':branch'=>$row['branch_id']]; $deletedLogs = 0;
-                if ($s['kind'] === 'campaign') {
-                    $deletedLogs += self::statement("DELETE FROM dbo.$log WHERE campaign_id=:id AND (branch_id=:branch OR branch_id IS NULL)", $params)->rowCount();
-                }
-                $link = $s['channel'] === 'whatsapp' ? 'l.provider_message_id COLLATE DATABASE_DEFAULT=q.provider_message_id' : 'l.queue_id=q.id';
-                $deletedLogs += self::statement("DELETE l FROM dbo.$log l INNER JOIN dbo.$queue q ON $link
-                    WHERE q.$foreign=:id AND q.branch_id=:branch AND (l.branch_id=q.branch_id OR l.branch_id IS NULL)", $params)->rowCount();
+                $params = [':id'=>$row['id'], ':branch'=>$row['branch_id']];
+                // Resolve the reviewed set once. Delete by primary key in small
+                // statements instead of joining and deleting a whole batch with
+                // large message snapshots in one statement. Keep one transaction.
+                $related = self::relatedLogs($s);
+                $phase = 'obtener registros de ' . $key . ' #' . (int)$row['id'];
+                $logRows = self::statement("SELECT related.id FROM dbo.$batch b
+                    CROSS APPLY ($related) related WHERE b.id=:id AND b.branch_id=:branch", $params);
+                $logIds = $logRows->fetchAll(PDO::FETCH_COLUMN); $logRows->closeCursor();
+                $phase = 'borrar registros de ' . $key . ' #' . (int)$row['id'];
+                $deletedLogs = self::deleteIds($log, $logIds);
                 if ($deletedLogs !== (int) $row['records']) throw new RuntimeException('Los registros cambiaron durante la purga. La operación se revirtió.');
-                $deleteRows = self::statement("DELETE FROM dbo.$queue WHERE $foreign=:id AND branch_id=:branch", $params);
-                if ($deleteRows->rowCount() !== (int) $row['recipients']) throw new RuntimeException('Los destinatarios cambiaron durante la purga. La operación se revirtió.');
+                $queueRows = self::statement("SELECT id FROM dbo.$queue WHERE $foreign=:id AND branch_id=:branch", $params);
+                $queueIds = $queueRows->fetchAll(PDO::FETCH_COLUMN); $queueRows->closeCursor();
+                $phase = 'borrar destinatarios de ' . $key . ' #' . (int)$row['id'];
+                if (self::deleteIds($queue, $queueIds) !== (int) $row['recipients']) throw new RuntimeException('Los destinatarios cambiaron durante la purga. La operación se revirtió.');
+                $phase = 'borrar lote de ' . $key . ' #' . (int)$row['id'];
                 $deleteBatch = self::statement("DELETE FROM dbo.$batch WHERE id=:id AND branch_id=:branch", $params);
                 if ($deleteBatch->rowCount() !== 1) throw new RuntimeException('El lote cambió durante la purga. La operación se revirtió.');
                 $totals['batches']++; $totals['recipients'] += (int) $row['recipients']; $totals['records'] += (int) $row['records'];
             }
             $receipt = ['at'=>date('Y-m-d H:i:s'), 'user_id'=>(int)$user['id'], 'user_name'=>$user['full_name'], 'filters'=>$filters, 'totals'=>$totals];
+            $phase = 'guardar comprobante';
             self::statement('INSERT INTO dbo.SendMail_Settings(setting_key,setting_value) VALUES(:key,:value)',
                 [':key'=>$receiptKey, ':value'=>json_encode($receipt,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]);
             $pdo->commit(); return $receipt;
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             if ($e instanceof PDOException && in_array((string)$e->getCode(), ['HYT00','HYT01'], true)) {
+                error_log('SendMails purga timeout [' . $phase . ']: ' . $e->getMessage());
                 throw new RuntimeException('La base tardó demasiado en responder. La purga se revirtió; no se eliminó ningún lote de esta operación. Calculá otra vista previa o intentá cuando la base esté menos ocupada.', 0, $e);
             }
             throw $e;
         } finally { self::$deadline = null; }
+    }
+
+    private static function deleteIds(string $table, array $ids): int
+    {
+        $deleted = 0;
+        foreach (array_chunk(array_values(array_unique($ids)), self::DELETE_CHUNK) as $chunk) {
+            $params = []; $keys = [];
+            foreach ($chunk as $index=>$id) {
+                $key = ':delete' . $index;
+                $keys[] = $key; $params[$key] = $id;
+            }
+            $stmt = self::statement("DELETE FROM dbo.$table WHERE id IN (" . implode(',', $keys) . ')', $params);
+            $deleted += $stmt->rowCount(); $stmt->closeCursor();
+        }
+        return $deleted;
     }
 
     public static function recent(): array
