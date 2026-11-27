@@ -18,12 +18,12 @@ $pdo->exec("IF OBJECT_ID('dbo.FacturasTel','U') IS NOT NULL DROP TABLE dbo.Factu
     CREATE TABLE dbo.clientes(OId nvarchar(80) PRIMARY KEY,codigo_cliente nvarchar(40),razon_social nvarchar(150),plan_contratado nvarchar(50),
         DirEMail nvarchar(320),telefono_movil nvarchar(30),localidad nvarchar(80),provincia nvarchar(80));
     CREATE TABLE dbo.FacturasTel(Id nvarchar(80) PRIMARY KEY,IdCliente nvarchar(80),V1_M_Final decimal(18,2),Nombre nvarchar(150),SNB nvarchar(80),
-        V1_FechaVto datetime2,Estado char(1),Autorizada bit,mail_enviado bit,fecha_mail_enviado datetime2 NULL);
+        V1_FechaVto datetime2,Estado char(1),Autorizada bit,mail_enviado bit,fecha_mail_enviado datetime2 NULL, UsaDebAuto bit NULL);
     WITH n AS (SELECT TOP 4000 ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) AS id FROM sys.all_objects a CROSS JOIN sys.all_objects b)
     INSERT INTO dbo.clientes SELECT CONVERT(nvarchar(80),id),RIGHT('00000'+CONVERT(varchar,id),5),N'Cliente '+RIGHT('00000'+CONVERT(varchar,id),5),
         CASE WHEN id%2=0 THEN 'Plan A' ELSE 'Plan B' END,'cliente'+CONVERT(varchar,id)+'@example.invalid',
         '54911'+RIGHT('00000000'+CONVERT(varchar,id),8),'Localidad','Provincia' FROM n;
-    INSERT INTO dbo.FacturasTel SELECT 'F'+OId,OId,1500,razon_social,codigo_cliente,'2026-09-30T12:00:00','I',1,0,NULL FROM dbo.clientes;");
+    INSERT INTO dbo.FacturasTel SELECT 'F'+OId,OId,1500,razon_social,codigo_cliente,'2026-09-30T12:00:00','I',1,0,NULL,NULL FROM dbo.clientes;");
 if (!is_file(STORAGE_PATH . '/invoice_crypto.key')) file_put_contents(STORAGE_PATH . '/invoice_crypto.key', 'test-only-invoice-key-never-production');
 // Store only dummy transport settings. Neither the worker nor an external transport is executed.
 $stmt = $pdo->prepare("UPDATE dbo.SendMail_Settings SET setting_value=:value WHERE setting_key='smtp:1'");
@@ -38,6 +38,11 @@ check(ClientRepository::page('', ['Plan A'])['total']===2000, 'Filtro de planes'
 check(count(ClientRepository::findByOids(array_map('strval',range(1,4000))))===4000, 'Seleccion completa sin superar 2100 parametros');
 echo "OK busqueda y seleccion de 4000 clientes\n";
 $invoiceTemplate = InvoiceRepository::defaultTemplate();
+$pdo->exec("UPDATE dbo.FacturasTel SET UsaDebAuto=1 WHERE Id='F1'");
+foreach (['reminder' => 3999, 'mass' => 4000] as $scope => $expected) {
+    check(InvoiceRepository::searchTotal('2026-09-30','I',false,['invoice_scope'=>$scope]) === $expected, 'Filtro de débito automático: '.$scope);
+}
+$pdo->exec("UPDATE dbo.FacturasTel SET UsaDebAuto=0 WHERE Id='F1'");
 $invoicePage = InvoiceRepository::search('2026-09-30','I',false,$invoiceTemplate,[],50,'email',2,false);
 check(count($invoicePage)===50, 'Paginacion facturas');
 check(InvoiceRepository::searchTotal('2026-09-30','I',false)===4000, 'Conteo facturas');

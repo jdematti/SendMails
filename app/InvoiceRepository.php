@@ -254,6 +254,10 @@ final class InvoiceRepository
             ':next_date' => $date->modify('+1 day')->format('Ymd'),
         ];
 
+        if (isset($filters['invoice_scope']) && $filters['invoice_scope'] !== 'mass') {
+            $where[] = 'ISNULL(F.UsaDebAuto, 0) <> 1';
+        }
+
         if ($status !== '') {
             if (!in_array($status, ['I', 'P'], true)) {
                 throw new InvalidArgumentException('Estado invalido.');

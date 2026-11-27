@@ -31,13 +31,14 @@
     };
     const extraFilters = (reveal = false) => {
         const values = input();
-        const count = (values.plans || []).length + ['status','snb','email','phone','client_name','include_sent'].filter(name => !!values[name]).length;
+        const count = Number(!!values.invoice_scope) + (values.plans || []).length + ['status','snb','email','phone','client_name','include_sent'].filter(name => !!values[name]).length;
         $('extraFilterCount').textContent = count ? '· ' + count + ' seleccionados' : '';
         if (reveal && count) $('extraFilters').open = true;
         if (reveal && values.manual_emails?.trim() && $('manualRecipients')) $('manualRecipients').open = true;
     };
     const changed = () => { dirty = true; $('saveStatus').textContent = 'Cambios sin guardar'; extraFilters(); persist(); };
     const fill = value => {
+        if (form.elements.invoice_scope) form.elements.invoice_scope.value = 'reminder';
         for (const [name, fieldValue] of Object.entries(value)) {
             if (name === 'plans') { form.querySelectorAll('[name="plans[]"]').forEach(box => box.checked = (fieldValue || []).includes(box.value)); continue; }
             const field = form.elements.namedItem(name);
@@ -163,6 +164,7 @@
     $('clearFilters').onclick = () => run(async () => {
         for (const name of ['q', 'due_date', 'status', 'snb', 'email', 'phone', 'client_name']) if (form.elements[name]) form.elements[name].value = '';
         form.querySelectorAll('[name="plans[]"]').forEach(box => box.checked = false);
+        if (form.elements.invoice_scope) form.elements.invoice_scope.value = 'reminder';
         if (form.elements.include_sent) form.elements.include_sent.checked = false;
         changed(); await search(1);
     });
@@ -173,6 +175,9 @@
     form.addEventListener('submit', event => { event.preventDefault(); run(() => search(1)); });
     form.addEventListener('input', changed);
     form.elements.channel.addEventListener('change', () => { channels(); run(() => search(1)); });
+    form.elements.invoice_scope?.addEventListener('change', () => {
+        ids.clear(); selection(); changed(); run(() => search(1));
+    });
     form.elements.due_date?.addEventListener('change', () => {
         if (ids.size) { ids.clear(); selection(); changed(); notice('Al cambiar el vencimiento se vació la selección de facturas. Seleccioná las del nuevo vencimiento.'); }
     });

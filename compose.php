@@ -51,6 +51,7 @@ require __DIR__ . '/app/layout/header.php';
                     <div id="plans" class="plan-options" role="group" aria-label="Planes"><?php foreach ($plans as $plan): ?><label><input type="checkbox" name="plans[]" value="<?= e($plan) ?>"> <?= e($plan) ?></label><?php endforeach; ?></div>
                 <?php else: ?>
                     <div class="form-grid">
+                    <div class="field"><label for="invoice_scope">Tipo de envío</label><select id="invoice_scope" name="invoice_scope"><option value="reminder">Recordatorio · excluir débito automático</option><option value="mass">Masivo · incluir débito automático</option></select></div>
                     <div class="field"><label for="status">Estado</label><select id="status" name="status"><option value="">Todos</option><option value="I">Impagas</option><option value="P">Pagas</option></select></div>
                     <div class="field"><label for="snb">SNB</label><input id="snb" name="snb"></div>
                     <div class="field"><label for="client_name">Nombre</label><input id="client_name" name="client_name"></div>

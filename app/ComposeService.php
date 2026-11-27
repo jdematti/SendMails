@@ -16,6 +16,7 @@ final class ComposeService
             $result[$key] = array_values(array_unique(array_map('strval', array_filter($values, 'is_scalar'))));
         }
         if (count($result['ids']) > 20000 || count($result['plans']) > 100) throw new InvalidArgumentException('La seleccion supera el limite permitido.');
+        $result['invoice_scope'] = ($data['invoice_scope'] ?? '') === 'mass' ? 'mass' : 'reminder';
         $result['include_sent'] = !empty($data['include_sent']);
         $result['name'] = mb_substr($result['name'], 0, 150);
         return $result;
@@ -23,7 +24,7 @@ final class ComposeService
 
     private static function invoiceFilters(array $input): array
     {
-        return ['snb' => $input['snb'], 'email' => $input['email'], 'phone' => $input['phone'], 'name' => $input['client_name']];
+        return ['invoice_scope' => $input['invoice_scope'] ?? 'reminder', 'snb' => $input['snb'], 'email' => $input['email'], 'phone' => $input['phone'], 'name' => $input['client_name']];
     }
 
     public static function search(string $kind, array $input, int $page = 1, bool $idsOnly = false): array
@@ -53,7 +54,7 @@ final class ComposeService
         }
         if (!$input['ids']) return [];
         return InvoiceRepository::search($input['due_date'], $input['status'], $input['include_sent'], $template,
-            ['selected_ids' => $input['ids']], 0, $input['channel'], 1, false);
+            ['selected_ids' => $input['ids'], 'invoice_scope' => $input['invoice_scope'] ?? 'reminder'], 0, $input['channel'], 1, false);
     }
 
     public static function classify(string $kind, array $rows, string $channel, array $blockedEmails, array $blockedPhones, string $country = '54'): array

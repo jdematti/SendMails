@@ -126,6 +126,7 @@ try {
         $template = InvoiceRepository::defaultTemplate();
     }
     $items = InvoiceRepository::search($dueDate, $status, $includeSent, $template, [
+        'invoice_scope' => query_string('invoice_scope', 'reminder'),
         'snb' => $filterSnb,
         'email' => $filterEmail,
         'phone' => $filterPhone,
